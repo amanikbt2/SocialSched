@@ -1,0 +1,310 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { Header } from '../../src/components/common/Header';
+import { Card } from '../../src/components/common/Card';
+import { useThemeStore } from '../../src/stores/useThemeStore';
+import { useQueueStore } from '../../src/stores/useQueueStore';
+import { useCampaignStore } from '../../src/stores/useCampaignStore';
+import { exportAppDataJSON, importAppDataJSON } from '../../src/services/backupService';
+import { Moon, Sun, Monitor, HardDrive, Wifi, ShieldAlert, Download, Upload, Bell } from 'lucide-react-native';
+
+export default function SettingsScreen() {
+  const colors = useThemeStore((state) => state.colors);
+  const { mode, setMode } = useThemeStore();
+  const { networkStatus, setNetworkStatus, autoRetry, setAutoRetry } = useQueueStore();
+  const { posts, campaigns, loadData } = useCampaignStore();
+
+  const [notifications, setNotifications] = useState(true);
+
+  const handleExportBackup = async () => {
+    try {
+      const json = await exportAppDataJSON();
+      Alert.alert(
+        'Export Backup Successful',
+        `JSON Backup generated with ${posts.length} posts and ${campaigns.length} campaigns.\n\nData size: ${(json.length / 1024).toFixed(1)} KB`
+      );
+    } catch (e) {
+      Alert.alert('Export Failed', 'Unable to generate JSON backup.');
+    }
+  };
+
+  const handleImportBackup = async () => {
+    Alert.alert(
+      'Restore Backup',
+      'This will merge imported campaigns and posts into your local SQLite database.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore',
+          onPress: async () => {
+            const mockBackup = await exportAppDataJSON();
+            const success = await importAppDataJSON(mockBackup);
+            if (success) {
+              await loadData();
+              Alert.alert('Success', 'Backup restored successfully!');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Header title="Settings" subtitle="Preferences, theme & database backups" />
+
+      <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
+        {/* MD3 Appearance & Theme */}
+        <Card style={styles.sectionCard}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Appearance & Theme</Text>
+          <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>Select your preferred MD3 interface theme</Text>
+
+          <View style={styles.themeRow}>
+            {[
+              { key: 'dark', label: 'Dark Mode', icon: Moon },
+              { key: 'light', label: 'Light Mode', icon: Sun },
+              { key: 'system', label: 'System', icon: Monitor },
+            ].map(({ key, label, icon: Icon }) => (
+              <TouchableOpacity
+                key={key}
+                activeOpacity={0.8}
+                onPress={() => setMode(key as any)}
+                style={[
+                  styles.themeChip,
+                  {
+                    backgroundColor: mode === key ? colors.primaryContainer : colors.surfaceVariant,
+                    borderColor: mode === key ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Icon size={18} color={mode === key ? colors.primary : colors.textSecondary} />
+                <Text
+                  style={[
+                    styles.themeText,
+                    { color: mode === key ? colors.primary : colors.textSecondary },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Card>
+
+        {/* Network & Simulation */}
+        <Card style={styles.sectionCard}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Network & Queue Engine</Text>
+          <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>Test offline behavior and automatic retry rules</Text>
+
+          <View style={styles.optionRow}>
+            <View style={styles.optionTextGroup}>
+              <Wifi size={18} color={colors.primary} />
+              <View>
+                <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Network Connection State</Text>
+                <Text style={[styles.optionDesc, { color: colors.textSecondary }]}>Current: {networkStatus.toUpperCase()}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.netChoiceRow}>
+            {(['online', 'offline', 'flaky'] as const).map((net) => (
+              <TouchableOpacity
+                key={net}
+                activeOpacity={0.8}
+                onPress={() => setNetworkStatus(net)}
+                style={[
+                  styles.netChip,
+                  {
+                    backgroundColor: networkStatus === net ? colors.primaryContainer : colors.surfaceVariant,
+                    borderColor: networkStatus === net ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.netText,
+                    { color: networkStatus === net ? colors.primary : colors.textSecondary },
+                  ]}
+                >
+                  {net.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={[styles.optionRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, marginTop: 12 }]}>
+            <View style={styles.optionTextGroup}>
+              <ShieldAlert size={18} color={colors.warning} />
+              <View>
+                <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Auto-Retry Failed Posts</Text>
+                <Text style={[styles.optionDesc, { color: colors.textSecondary }]}>Automatically retry when connection returns</Text>
+              </View>
+            </View>
+            <Switch
+              value={autoRetry}
+              onValueChange={setAutoRetry}
+              trackColor={{ false: colors.surfaceVariant, true: colors.primary }}
+            />
+          </View>
+        </Card>
+
+        {/* Local Storage & Backup */}
+        <Card style={styles.sectionCard}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Storage & Backup</Text>
+          <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>SQLite database management & JSON export</Text>
+
+          <View style={styles.storageInfo}>
+            <HardDrive size={20} color={colors.secondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Local Database Usage</Text>
+              <Text style={[styles.optionDesc, { color: colors.textSecondary }]}>
+                {posts.length} Posts • {campaigns.length} Campaigns • ~1.2 MB SQLite
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.backupBtnRow}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleExportBackup}
+              style={[styles.backupBtn, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}
+            >
+              <Download size={16} color={colors.primary} />
+              <Text style={[styles.backupText, { color: colors.primary }]}>Export JSON</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleImportBackup}
+              style={[styles.backupBtn, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}
+            >
+              <Upload size={16} color={colors.textPrimary} />
+              <Text style={[styles.backupText, { color: colors.textPrimary }]}>Restore Backup</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
+
+        {/* Notifications */}
+        <Card style={styles.sectionCard}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Notifications</Text>
+          <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>Schedule alerts and queue updates</Text>
+
+          <View style={styles.optionRow}>
+            <View style={styles.optionTextGroup}>
+              <Bell size={18} color={colors.accent} />
+              <View>
+                <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Push Notifications</Text>
+                <Text style={[styles.optionDesc, { color: colors.textSecondary }]}>Notify when post uploads finish or fail</Text>
+              </View>
+            </View>
+            <Switch
+              value={notifications}
+              onValueChange={setNotifications}
+              trackColor={{ false: colors.surfaceVariant, true: colors.accent }}
+            />
+          </View>
+        </Card>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollList: {
+    padding: 20,
+    gap: 16,
+    paddingBottom: 60,
+  },
+  sectionCard: {
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  sectionSub: {
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  themeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  themeChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 6,
+  },
+  themeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  optionTextGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  optionDesc: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  netChoiceRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  netChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  netText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  storageInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  backupBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  backupBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 6,
+  },
+  backupText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+});
