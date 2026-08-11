@@ -30,30 +30,38 @@ export default function PostDetailScreen() {
   const [notes, setNotes] = useState(post.notes);
   const [scheduledAt, setScheduledAt] = useState(post.scheduledAt);
 
+  const handleSafeBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   const handleSave = async () => {
     await updatePost(post.id, {
       caption,
       notes,
       scheduledAt,
     });
-    router.back();
+    handleSafeBack();
   };
 
   const handleDuplicate = async () => {
     await duplicatePost(post.id);
-    router.back();
+    handleSafeBack();
   };
 
   const handleDelete = async () => {
     await deletePost(post.id);
-    router.back();
+    handleSafeBack();
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity activeOpacity={0.8} onPress={handleSafeBack} style={styles.backBtn}>
           <ArrowLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Post Inspector</Text>

@@ -1,0 +1,2139 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Switch,
+  Image,
+  Alert,
+} from 'react-native';
+import { AnimatedSheet } from '../common/AnimatedSheet';
+import { useThemeStore } from '../../stores/useThemeStore';
+import { useCampaignStore } from '../../stores/useCampaignStore';
+import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
+import { Container, Post, SocialPlatform } from '../../db/types';
+import { FacebookMediaGrid } from '../common/FacebookMediaGrid';
+import { pickLocalMedia } from '../../utils/mediaPicker';
+import { generateLoopPosts } from '../../services/loopContainerEngine';
+import {
+  Plus,
+  Trash2,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Image as ImageIcon,
+  Sparkles,
+  Clock,
+  Calendar as CalendarIcon,
+  Layers,
+  Facebook,
+  Instagram,
+  Twitter,
+  Video,
+  CheckSquare,
+  Square,
+  Tag,
+  AtSign,
+  Upload,
+  Infinity as InfinityIcon,
+  AlertCircle,
+  Repeat,
+} from 'lucide-react-native';
+import { platformColors } from '../../theme/colors';
+
+interface AddContainerModalProps {
+  visible: boolean;
+  onClose: () => void;
+  existingContainer?: Container | null;
+}
+
+const SAMPLE_HASHTAGS = ['#viral', '#trending', '#marketing', '#tech', '#growth', '#photooftheday', '#sale'];
+const SAMPLE_MENTIONS = ['@facebook', '@instagram', '@meta', '@techcrunch', '@forbes', '@creator'];
+const SAMPLE_IMAGES = [
+  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
+  'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=60',
+  'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=60',
+];
+
+interface DraftPostItem {
+  id: string;
+  caption: string;
+  images: string[];
+  scheduledDate: string; // e.g. "2026-08-10"
+  scheduledTime: string; // e.g. "14:30"
+  expanded: boolean;
+}
+
+export const AddContainerModal: React.FC<AddContainerModalProps> = ({
+  visible,
+  onClose,
+  existingContainer,
+}) => {
+  const colors = useThemeStore((state) => state.colors);
+  const { addCampaign, updateCampaign, addPost } = useCampaignStore();
+
+  const [title, setTitle] = useState(existingContainer?.title || '');
+  const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(
+    existingContainer?.platforms || ['facebook', 'instagram']
+  );
+  const [smartScheduling, setSmartScheduling] = useState(
+    existingContainer?.smartSchedulingEnabled ?? true
+  );
+  const [intervalMinutes, setIntervalMinutes] = useState<number>(
+    existingContainer?.intervalMinutes || 60
+  );
+  const [customIntervalInput, setCustomIntervalInput] = useState<string>(
+    String(existingContainer?.intervalMinutes || 60)
+  );
+
+  const getTodayISO = () => new Date().toISOString().split('T')[0];
+  const getTomorrowISO = () => new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const getFutureTimeString = (offsetMinutes: number = 30) => {
+    const d = new Date(Date.now() + offsetMinutes * 60000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  const [startDate, setStartDate] = useState(existingContainer?.startDate || getTodayISO());
+  const [startTime, setStartTime] = useState(existingContainer?.startTime || getFutureTimeString(30));
+
+  // End Date Limit settings
+  const [hasEndDateLimit, setHasEndDateLimit] = useState<boolean>(
+    existingContainer?.hasEndDateLimit || false
+  );
+  const [endDate, setEndDate] = useState<string>(
+    existingContainer?.endDate || getTomorrowISO()
+  );
+
+  // Collapsible Social Media state
+  const [socialsExpanded, setSocialsExpanded] = useState<boolean>(false);
+
+  // Social Accounts Store Integration
+  const { accounts } = useSocialAccountsStore();
+  const connectedFbAccounts = accounts.filter((a) => a.platform === 'facebook' && a.isConnected);
+  const [selectedFbPageId, setSelectedFbPageId] = useState<string>(
+    connectedFbAccounts[0]?.id || ''
+  );
+
+  // Loop Container state variables
+  const [isLoopContainer, setIsLoopContainer] = useState<boolean>(
+    existingContainer?.isLoopContainer || false
+  );
+  const [mediaPerPost, setMediaPerPost] = useState<number>(
+    existingContainer?.mediaPerPost || 1
+  );
+  const [loopTab, setLoopTab] = useState<'descriptions' | 'media'>('descriptions');
+  const [loopDescriptions, setLoopDescriptions] = useState<string[]>(
+    existingContainer?.loopDescriptions && existingContainer.loopDescriptions.length > 0
+      ? existingContainer.loopDescriptions
+      : [
+          '🔥 Fresh daily content for our amazing community! #viral #trending',
+          '✨ Level up your social media presence with consistent value. #growth #marketing',
+          '🚀 Check out this awesome post! Tag a friend who needs to see this. @creator',
+        ]
+  );
+  const [loopMediaPool, setLoopMediaPool] = useState<string[]>(
+    existingContainer?.loopMediaPool && existingContainer.loopMediaPool.length > 0
+      ? existingContainer.loopMediaPool
+      : [SAMPLE_IMAGES[0], SAMPLE_IMAGES[1], SAMPLE_IMAGES[2]]
+  );
+  const [newDescInput, setNewDescInput] = useState<string>('');
+  const [pastedUrl, setPastedUrl] = useState<string>('');
+
+  const handleAddDescription = () => {
+    if (!newDescInput.trim()) return;
+    const lines = newDescInput
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    setLoopDescriptions([...loopDescriptions, ...lines]);
+    setNewDescInput('');
+  };
+
+  const handleRemoveDescription = (index: number) => {
+    setLoopDescriptions(loopDescriptions.filter((_, idx) => idx !== index));
+  };
+
+  const handleBulkPickMedia = async () => {
+    const picked = await pickLocalMedia();
+    if (picked && picked.length > 0) {
+      setLoopMediaPool([...loopMediaPool, ...picked]);
+    }
+  };
+
+  const handleAppendPastedUrl = () => {
+    if (!pastedUrl.trim()) return;
+    setLoopMediaPool([...loopMediaPool, pastedUrl.trim()]);
+    setPastedUrl('');
+  };
+
+  const handleRemoveMediaFromPool = (index: number) => {
+    setLoopMediaPool(loopMediaPool.filter((_, idx) => idx !== index));
+  };
+
+  // Draft Posts inside container
+  const [posts, setPosts] = useState<DraftPostItem[]>([
+    {
+      id: '1',
+      caption: '🚀 Excited to launch our new product line! Check out the details below. #viral #marketing @meta',
+      images: [SAMPLE_IMAGES[0], SAMPLE_IMAGES[1], SAMPLE_IMAGES[2]],
+      scheduledDate: getTodayISO(),
+      scheduledTime: getFutureTimeString(30),
+      expanded: false,
+    },
+    {
+      id: '2',
+      caption: '✨ Morning motivation for creators: Stay consistent and keep building! #tech #growth @creator',
+      images: [SAMPLE_IMAGES[0]],
+      scheduledDate: getTodayISO(),
+      scheduledTime: getFutureTimeString(60),
+      expanded: false,
+    },
+  ]);
+
+  const togglePlatform = (p: SocialPlatform) => {
+    if (selectedPlatforms.includes(p)) {
+      if (selectedPlatforms.length > 1) {
+        setSelectedPlatforms(selectedPlatforms.filter((item) => item !== p));
+      }
+    } else {
+      setSelectedPlatforms([...selectedPlatforms, p]);
+    }
+  };
+
+  const handleCustomIntervalChange = (text: string) => {
+    setCustomIntervalInput(text);
+    const parsed = parseInt(text, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      setIntervalMinutes(parsed);
+    }
+  };
+
+  const handleAddPost = () => {
+    const newPost: DraftPostItem = {
+      id: Date.now().toString(),
+      caption: '',
+      images: [],
+      scheduledDate: getTodayISO(),
+      scheduledTime: getFutureTimeString((posts.length + 1) * 30),
+      expanded: true,
+    };
+    setPosts([newPost, ...posts.map((p) => ({ ...p, expanded: false }))]);
+  };
+
+  const handleUpdatePostCaption = (id: string, text: string) => {
+    setPosts(posts.map((p) => (p.id === id ? { ...p, caption: text } : p)));
+  };
+
+  const handleAppendTag = (id: string, tag: string) => {
+    setPosts(
+      posts.map((p) => {
+        if (p.id === id) {
+          const current = p.caption;
+          const space = current.endsWith(' ') || current === '' ? '' : ' ';
+          return { ...p, caption: current + space + tag };
+        }
+        return p;
+      })
+    );
+  };
+
+  // Open Real Local File Media Picker
+  const handleOpenLocalPicker = async (id: string) => {
+    const pickedUris = await pickLocalMedia();
+    if (pickedUris && pickedUris.length > 0) {
+      setPosts(
+        posts.map((p) => {
+          if (p.id === id) {
+            return { ...p, images: [...p.images, ...pickedUris] };
+          }
+          return p;
+        })
+      );
+    }
+  };
+
+  // Remove a specific image from a post's gallery
+  const handleRemoveImage = (postId: string, imageIndex: number) => {
+    setPosts(
+      posts.map((p) => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            images: p.images.filter((_, idx) => idx !== imageIndex),
+          };
+        }
+        return p;
+      })
+    );
+  };
+
+  const handleRemovePost = (id: string) => {
+    setPosts(posts.filter((p) => p.id !== id));
+  };
+
+  const togglePostExpanded = (id: string) => {
+    setPosts(posts.map((p) => (p.id === id ? { ...p, expanded: !p.expanded } : p)));
+  };
+
+  const handleSaveContainer = async () => {
+    if (!title.trim()) {
+      Alert.alert('Error', 'Please enter a Container Title');
+      return;
+    }
+
+    try {
+      const containerId = existingContainer?.id || 'container_' + Date.now();
+      const normStartD = smartNormalizeDate(startDate) || getTodayISO();
+      const normStartT = smartNormalizeTime(startTime) || getFutureTimeString(30);
+
+      if (isLoopContainer) {
+        if (loopDescriptions.length === 0) {
+          Alert.alert('Error', 'Please add at least 1 description for your Loop Container!');
+          return;
+        }
+        if (loopMediaPool.length === 0) {
+          Alert.alert('Error', 'Please add photos or videos to your Media Pool!');
+          return;
+        }
+
+        const loopContainerData: Container = {
+          id: containerId,
+          title: title.trim(),
+          description: `Loop Container (${loopMediaPool.length} media pool, ${loopDescriptions.length} captions)`,
+          category: 'Loop Container',
+          color: '#8B5CF6',
+          thumbnailUri: loopMediaPool[0] || SAMPLE_IMAGES[0],
+          platforms: selectedPlatforms,
+          smartSchedulingEnabled: true, // Always ON for loop containers
+          intervalMinutes: intervalMinutes || 60,
+          startDate: normStartD,
+          startTime: normStartT,
+          hasEndDateLimit: hasEndDateLimit,
+          endDate: hasEndDateLimit ? smartNormalizeDate(endDate) : undefined,
+          isPaused: false,
+          createdAt: new Date().toISOString(),
+          isLoopContainer: true,
+          mediaPerPost: Math.max(1, mediaPerPost || 1),
+          loopDescriptions: loopDescriptions,
+          loopMediaPool: loopMediaPool,
+          usedMediaUris: existingContainer?.usedMediaUris || [],
+          currentLoopRound: existingContainer?.currentLoopRound || 1,
+          isLoopCompleted: false,
+        };
+
+        if (existingContainer) {
+          await updateCampaign(loopContainerData);
+        } else {
+          await addCampaign(loopContainerData);
+        }
+
+        // Run "The Real Magic" - Random Loop Posts Generator
+        const result = generateLoopPosts({
+          container: loopContainerData,
+          loopDescriptions,
+          loopMediaPool,
+          usedMediaUris: existingContainer?.usedMediaUris || [],
+          mediaPerPost: Math.max(1, mediaPerPost || 1),
+          startDate: normStartD,
+          startTime: normStartT,
+          endDate: hasEndDateLimit ? smartNormalizeDate(endDate) : undefined,
+          intervalMinutes: intervalMinutes || 60,
+          platforms: selectedPlatforms,
+        });
+
+        // Persist updated used media tracking and loop completed status
+        await updateCampaign(containerId, {
+          usedMediaUris: result.updatedUsedMediaUris,
+          isLoopCompleted: result.isLoopCompleted,
+        });
+
+        for (const p of result.newPosts) {
+          await addPost(p);
+        }
+
+        onClose();
+        return;
+      }
+
+      // STANDARD CONTAINER SAVE FLOW
+      const thumbnail =
+        posts.find((p) => p.images.length > 0)?.images[0] || SAMPLE_IMAGES[0];
+
+      const containerData: Container = {
+        id: containerId,
+        title: title.trim(),
+        description: `Container with ${posts.length} scheduled posts`,
+        category: 'Social Batch',
+        color: '#4F46E5',
+        thumbnailUri: thumbnail,
+        platforms: selectedPlatforms,
+        smartSchedulingEnabled: smartScheduling,
+        intervalMinutes: intervalMinutes || 60,
+        startDate: normStartD,
+        startTime: normStartT,
+        hasEndDateLimit: hasEndDateLimit,
+        endDate: hasEndDateLimit ? smartNormalizeDate(endDate) : undefined,
+        isPaused: false,
+        createdAt: new Date().toISOString(),
+      };
+
+      if (existingContainer) {
+        await updateCampaign(containerData);
+      } else {
+        await addCampaign(containerData);
+      }
+
+      // Safe date calculation
+      let baseTimestamp = Date.parse(`${normStartD}T${normStartT}:00`);
+      if (isNaN(baseTimestamp) || baseTimestamp <= Date.now()) {
+        baseTimestamp = Date.now() + 15 * 60000;
+      }
+      let currentScheduleDate = new Date(baseTimestamp);
+
+      for (let i = 0; i < posts.length; i++) {
+        const draft = posts[i];
+        let scheduledISO: string;
+
+        if (smartScheduling) {
+          if (i > 0) {
+            currentScheduleDate = new Date(
+              currentScheduleDate.getTime() + (intervalMinutes || 60) * 60 * 1000
+            );
+          }
+          if (currentScheduleDate.getTime() <= Date.now()) {
+            currentScheduleDate = new Date(Date.now() + (i + 1) * 30 * 60000);
+          }
+          scheduledISO = currentScheduleDate.toISOString();
+        } else {
+          const draftD = smartNormalizeDate(draft.scheduledDate || normStartD);
+          const draftT = smartNormalizeTime(draft.scheduledTime || normStartT);
+          let parsedCustom = Date.parse(`${draftD}T${draftT}:00`);
+
+          // CRITICAL FIX: If custom time chosen is in the past (<= now) or within 10 mins,
+          // shift it into a valid future schedule so Meta Graph API schedules it on server (published: false)
+          // instead of publishing it immediately!
+          if (isNaN(parsedCustom) || parsedCustom <= Date.now() + 10 * 60000) {
+            console.warn(`[AddContainerModal] Custom time for post ${i+1} (${draftD} ${draftT}) is in the past or < 10 mins! Shifting to future...`);
+            parsedCustom = Date.now() + (i + 1) * 20 * 60000;
+          }
+          scheduledISO = new Date(parsedCustom).toISOString();
+        }
+
+        const extractedTags = draft.caption.match(/#\w+/g) || [];
+        const extractedMentions = draft.caption.match(/@\w+/g) || [];
+
+        const newPost: Post = {
+          id: 'post_' + Date.now() + '_' + i,
+          campaignId: containerId,
+          caption: draft.caption,
+          images: draft.images.length > 0 ? draft.images : [SAMPLE_IMAGES[i % SAMPLE_IMAGES.length]],
+          videos: [],
+          platforms: selectedPlatforms,
+          scheduledAt: scheduledISO,
+          status: 'scheduled',
+          notes: '',
+          failureReason: null,
+          uploadProgress: 0,
+          tags: extractedTags,
+          hashtags: extractedTags,
+          mentions: extractedMentions,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await addPost(newPost);
+      }
+
+      onClose();
+    } catch (err: any) {
+      console.error('Error saving container:', err);
+      Alert.alert('Error', `Error saving container: ${err.message || err}`);
+    }
+  };
+
+  const smartNormalizeDate = (val: string): string => {
+    if (!val) return val;
+    const trimmed = val.trim();
+    const parts = trimmed.split(/[\/\-\.]/);
+    if (parts.length === 3) {
+      let [p1, p2, p3] = parts;
+      if (p3.length === 4) {
+        const d = p1.padStart(2, '0');
+        const m = p2.padStart(2, '0');
+        return `${p3}-${m}-${d}`;
+      } else if (p1.length === 4) {
+        const m = p2.padStart(2, '0');
+        const d = p3.padStart(2, '0');
+        return `${p1}-${m}-${d}`;
+      }
+    }
+    return trimmed;
+  };
+
+  const smartNormalizeTime = (val: string): string => {
+    if (!val) return val;
+    const trimmed = val.trim();
+    if (/^\d{1,2}$/.test(trimmed)) {
+      return `${trimmed.padStart(2, '0')}:00`;
+    }
+    const parts = trimmed.split(':');
+    if (parts.length === 2) {
+      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+    }
+    return trimmed;
+  };
+
+  const validateScheduledDateTime = (
+    dStr: string,
+    tStr: string
+  ): { valid: boolean; error?: string } => {
+    const normD = smartNormalizeDate(dStr);
+    const normT = smartNormalizeTime(tStr);
+    const parsed = Date.parse(`${normD}T${normT}:00`);
+
+    if (isNaN(parsed)) {
+      return { valid: false, error: 'Invalid Date/Time format. Use YYYY-MM-DD and HH:MM' };
+    }
+
+    const diffMinutes = (parsed - Date.now()) / (1000 * 60);
+    if (diffMinutes < 10) {
+      return {
+        valid: false,
+        error:
+          diffMinutes <= 0
+            ? '⏰ Scheduled time is in the past! Pick a time at least 10 minutes in future.'
+            : '⏰ Time must be at least 10 minutes in the future for Meta Server scheduling.',
+      };
+    }
+
+    return { valid: true };
+  };
+
+  const startValidation = validateScheduledDateTime(startDate, startTime);
+
+  const invalidCustomPost = !smartScheduling
+    ? posts.find((p) => !validateScheduledDateTime(p.scheduledDate, p.scheduledTime).valid)
+    : null;
+
+  const isFormTimeValid = startValidation.valid && !invalidCustomPost;
+
+  const getFirst5Words = (text: string) => {
+    if (!text || text.trim() === '') return 'Empty caption post...';
+    const words = text.trim().split(/\s+/);
+    if (words.length <= 5) return words.join(' ');
+    return words.slice(0, 5).join(' ') + '...';
+  };
+
+  const platformItems: { id: SocialPlatform; label: string; icon: any; color: string }[] = [
+    { id: 'facebook', label: 'Facebook', icon: Facebook, color: platformColors.facebook },
+    { id: 'instagram', label: 'Instagram', icon: Instagram, color: platformColors.instagram },
+    { id: 'x', label: 'X (Twitter)', icon: Twitter, color: platformColors.x },
+    { id: 'tiktok', label: 'TikTok', icon: Video, color: '#000000' },
+  ];
+
+  return (
+    <AnimatedSheet
+      visible={visible}
+      onClose={onClose}
+      fullScreen={true}
+      title={existingContainer ? 'Edit Container' : 'Add Scheduler Container'}
+      subtitle="Tick platforms, custom time interval & local photos"
+    >
+      <ScrollView
+        style={styles.containerScroll}
+        contentContainerStyle={styles.scrollPaddingBottom}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Step 1: Container Title & Multi-Tick Target Platforms */}
+        <Text style={[styles.sectionHeading, { color: colors.textSecondary }]}>
+          CONTAINER DETAILS
+        </Text>
+
+        {/* TOP TOGGLE: Loop Container */}
+        <View style={[styles.loopToggleCard, { backgroundColor: isLoopContainer ? colors.primaryContainer + '35' : colors.surfaceVariant, borderColor: isLoopContainer ? colors.primary : colors.border }]}>
+          <View style={styles.loopToggleLeft}>
+            <Repeat size={20} color={isLoopContainer ? colors.primary : colors.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.loopToggleTitle, { color: colors.textPrimary }]}>
+                Loop Container
+              </Text>
+              <Text style={[styles.loopToggleSubtitle, { color: isLoopContainer ? colors.primary : colors.textSecondary }]}>
+                {isLoopContainer
+                  ? `Media current round: ${existingContainer?.currentLoopRound || 1} • Auto-schedule until End Date`
+                  : 'Auto-schedule random media & descriptions until End Date'}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={isLoopContainer}
+            onValueChange={(val) => {
+              setIsLoopContainer(val);
+              if (val) setSmartScheduling(true);
+            }}
+            trackColor={{ false: colors.border, true: colors.primary }}
+          />
+        </View>
+
+        {isLoopContainer && (
+          <View style={[styles.loopMediaCountRow, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+            <View style={styles.loopMediaCountLeft}>
+              <Sparkles size={16} color={colors.primary} />
+              <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+                Number of Media per Post
+              </Text>
+            </View>
+            <View style={styles.mediaCountControl}>
+              <TouchableOpacity
+                onPress={() => setMediaPerPost(Math.max(1, mediaPerPost - 1))}
+                style={[styles.mediaCountBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              >
+                <Text style={[styles.mediaCountBtnText, { color: colors.textPrimary }]}>-</Text>
+              </TouchableOpacity>
+              <Text style={[styles.mediaCountVal, { color: colors.primary }]}>{mediaPerPost}</Text>
+              <TouchableOpacity
+                onPress={() => setMediaPerPost(mediaPerPost + 1)}
+                style={[styles.mediaCountBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              >
+                <Text style={[styles.mediaCountBtnText, { color: colors.textPrimary }]}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.inputGroup}>
+          <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>Container Name</Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              {
+                backgroundColor: colors.surfaceVariant,
+                color: colors.textPrimary,
+                borderColor: colors.border,
+              },
+            ]}
+            placeholder="e.g. Summer FB & IG Campaign"
+            placeholderTextColor={colors.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
+        </View>
+
+        {/* Collapsible Multi-Tick Target Platforms Grid */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setSocialsExpanded(!socialsExpanded)}
+          style={[
+            styles.collapsibleHeaderRow,
+            { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.collapsibleLeft}>
+            <Layers size={16} color={colors.primary} />
+            <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+              Target Social Media
+            </Text>
+          </View>
+
+          <View style={styles.collapsibleRight}>
+            <Text style={[styles.selectedSummaryText, { color: colors.primary }]}>
+              {selectedPlatforms.length} Selected
+            </Text>
+            {socialsExpanded ? (
+              <ChevronUp size={18} color={colors.textSecondary} />
+            ) : (
+              <ChevronDown size={18} color={colors.textSecondary} />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {socialsExpanded && (
+          <View style={[styles.tickPlatformsGrid, { marginTop: 8 }]}>
+            {platformItems.map((item) => {
+              const isSelected = selectedPlatforms.includes(item.id);
+              const IconComp = item.icon;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.8}
+                  onPress={() => togglePlatform(item.id)}
+                  style={[
+                    styles.tickPlatformCard,
+                    {
+                      backgroundColor: isSelected ? item.color + '15' : colors.surfaceVariant,
+                      borderColor: isSelected ? item.color : colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.tickLeft}>
+                    {isSelected ? (
+                      <CheckSquare size={18} color={item.color} />
+                    ) : (
+                      <Square size={18} color={colors.textMuted} />
+                    )}
+                    <IconComp size={16} color={isSelected ? item.color : colors.textSecondary} />
+                    <Text style={[styles.tickLabel, { color: colors.textPrimary }]}>{item.label}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Target Facebook Page Picker */}
+        {selectedPlatforms.includes('facebook') && (
+          <View style={[styles.fbPageSelectorBox, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+            <View style={styles.fbPageHeaderRow}>
+              <Facebook size={16} color={platformColors.facebook} />
+              <Text style={[styles.fbPageLabel, { color: colors.textPrimary }]}>
+                Target Facebook Page
+              </Text>
+            </View>
+
+            {connectedFbAccounts.length > 0 ? (
+              <View style={styles.fbPagesRow}>
+                {connectedFbAccounts.map((acc) => {
+                  const isPageSelected = selectedFbPageId === acc.id || connectedFbAccounts.length === 1;
+                  return (
+                    <TouchableOpacity
+                      key={acc.id}
+                      activeOpacity={0.8}
+                      onPress={() => setSelectedFbPageId(acc.id)}
+                      style={[
+                        styles.fbPageChip,
+                        {
+                          backgroundColor: isPageSelected ? platformColors.facebook + '20' : colors.surface,
+                          borderColor: isPageSelected ? platformColors.facebook : colors.border,
+                        },
+                      ]}
+                    >
+                      <Check size={14} color={isPageSelected ? platformColors.facebook : 'transparent'} />
+                      <Text style={[styles.fbPageChipText, { color: colors.textPrimary }]}>
+                        {acc.displayName} ({acc.username})
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.noFbPageText, { color: colors.danger }]}>
+                ⚠️ No Facebook Page connected. Open Settings (☰) to connect your page.
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Step 2: Smart Scheduling Rules */}
+        <Text style={[styles.sectionHeading, { color: colors.textSecondary, marginTop: 24 }]}>
+          SCHEDULING RULES
+        </Text>
+
+        {/* If Smart Scheduling is OFF: Minimized single line component */}
+        {!smartScheduling ? (
+          <View
+            style={[
+              styles.minimizedSmartLine,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.smartLeft}>
+              <Sparkles size={18} color={colors.textMuted} />
+              <Text style={[styles.minimizedSmartText, { color: colors.textSecondary }]}>
+                Smart Batch Scheduling (OFF)
+              </Text>
+            </View>
+            <Switch
+              value={smartScheduling}
+              onValueChange={setSmartScheduling}
+              trackColor={{ false: colors.border, true: colors.primary }}
+            />
+          </View>
+        ) : (
+          /* If Smart Scheduling is ON: Full Card settings */
+          <View
+            style={[
+              styles.smartCard,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.smartRow}>
+              <View style={styles.smartLeft}>
+                <Sparkles size={20} color={colors.primary} />
+                <View>
+                  <Text style={[styles.smartTitle, { color: colors.textPrimary }]}>
+                    Smart Batch Scheduling (ON)
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={smartScheduling}
+                onValueChange={setSmartScheduling}
+                trackColor={{ false: colors.border, true: colors.primary }}
+              />
+            </View>
+
+            <View style={styles.smartSettingsBody}>
+              {/* Spreading Interval Presets */}
+              <Text style={[styles.inputLabel, { color: colors.textPrimary, marginTop: 12 }]}>
+                Time Spreading Interval (Presets or Custom Minutes)
+              </Text>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.intervalScroll}>
+                {[
+                  { label: '12 mins', val: 12 },
+                  { label: '30 mins', val: 30 },
+                  { label: '45 mins', val: 45 },
+                  { label: '1 hour', val: 60 },
+                  { label: '2 hours', val: 120 },
+                  { label: '1 day', val: 1440 },
+                ].map((item) => (
+                  <TouchableOpacity
+                    key={item.val}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setIntervalMinutes(item.val);
+                      setCustomIntervalInput(String(item.val));
+                    }}
+                    style={[
+                      styles.intervalChip,
+                      {
+                        backgroundColor:
+                          intervalMinutes === item.val
+                            ? colors.primaryContainer
+                            : colors.surface,
+                        borderColor:
+                          intervalMinutes === item.val ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.intervalChipText,
+                        {
+                          color:
+                            intervalMinutes === item.val ? colors.primary : colors.textPrimary,
+                        },
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Flexible Custom Minutes Input */}
+              <View style={styles.customMinutesRow}>
+                <Clock size={16} color={colors.primary} />
+                <Text style={[styles.customMinutesText, { color: colors.textPrimary }]}>
+                  Flexible Minute Spreading:
+                </Text>
+                <TextInput
+                  style={[
+                    styles.minutesInput,
+                    {
+                      backgroundColor: colors.surface,
+                      color: colors.textPrimary,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  keyboardType="numeric"
+                  value={customIntervalInput}
+                  onChangeText={handleCustomIntervalChange}
+                  placeholder="12"
+                />
+                <Text style={[styles.minutesSuffix, { color: colors.textSecondary }]}>minutes</Text>
+              </View>
+
+              {/* Start Date & Start Time */}
+              <View style={styles.dateTimeSection}>
+                <Text style={[styles.inputLabel, { color: colors.textPrimary, marginTop: 14 }]}>
+                  Container Start Date & Time
+                </Text>
+                <View style={styles.dateTimeRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[
+                      styles.dateBox,
+                      {
+                        backgroundColor: !startValidation.valid ? '#FEF2F2' : colors.surface,
+                        borderColor: !startValidation.valid ? '#EF4444' : colors.border,
+                        borderWidth: !startValidation.valid ? 2 : 1,
+                      },
+                    ]}
+                  >
+                    <CalendarIcon size={14} color={!startValidation.valid ? '#EF4444' : colors.primary} />
+                    <TextInput
+                      style={[styles.dateInputText, { color: !startValidation.valid ? '#EF4444' : colors.textPrimary }]}
+                      value={startDate}
+                      onChangeText={setStartDate}
+                      onBlur={() => setStartDate(smartNormalizeDate(startDate))}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="date"
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[
+                      styles.timeBox,
+                      {
+                        backgroundColor: !startValidation.valid ? '#FEF2F2' : colors.surface,
+                        borderColor: !startValidation.valid ? '#EF4444' : colors.border,
+                        borderWidth: !startValidation.valid ? 2 : 1,
+                      },
+                    ]}
+                  >
+                    <Clock size={14} color={!startValidation.valid ? '#EF4444' : colors.primary} />
+                    <TextInput
+                      style={[styles.timeInputText, { color: !startValidation.valid ? '#EF4444' : colors.textPrimary }]}
+                      value={startTime}
+                      onChangeText={setStartTime}
+                      onBlur={() => setStartTime(smartNormalizeTime(startTime))}
+                      placeholder="09:00"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="time"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {!startValidation.valid && (
+                  <View style={styles.errorAlertBox}>
+                    <AlertCircle size={13} color="#EF4444" />
+                    <Text style={styles.errorAlertText}>{startValidation.error}</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* End Date Cutoff & Infinity Switch */}
+              <View style={styles.endDateSection}>
+                <View style={styles.endDateHeaderRow}>
+                  <View style={styles.endDateLeft}>
+                    <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+                      Set Hard End Date Cutoff
+                    </Text>
+                  </View>
+                  <Switch
+                    value={hasEndDateLimit}
+                    onValueChange={setHasEndDateLimit}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+
+                {hasEndDateLimit && (
+                  <View style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 8 }]}>
+                    <CalendarIcon size={14} color={colors.danger} />
+                    <TextInput
+                      style={[styles.dateInputText, { color: colors.textPrimary }]}
+                      value={endDate}
+                      onChangeText={setEndDate}
+                      onBlur={() => setEndDate(smartNormalizeDate(endDate))}
+                      placeholder="YYYY-MM-DD or 12/02/2026"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="date"
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Step 3: Posts / Loop Content Builder */}
+        {isLoopContainer ? (
+          <View style={styles.loopSectionContainer}>
+            <Text style={[styles.sectionHeading, { color: colors.textSecondary, marginTop: 24 }]}>
+              LOOP CONTENT POOL
+            </Text>
+
+            {/* Dual Tabs Header */}
+            <View style={[styles.tabBarRow, { backgroundColor: colors.surfaceVariant }]}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setLoopTab('descriptions')}
+                style={[
+                  styles.tabItemBtn,
+                  loopTab === 'descriptions' && [styles.tabItemBtnActive, { backgroundColor: colors.primary }],
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabItemText,
+                    { color: loopTab === 'descriptions' ? '#FFFFFF' : colors.textSecondary },
+                  ]}
+                >
+                  Descriptions ({loopDescriptions.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setLoopTab('media')}
+                style={[
+                  styles.tabItemBtn,
+                  loopTab === 'media' && [styles.tabItemBtnActive, { backgroundColor: colors.primary }],
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabItemText,
+                    { color: loopTab === 'media' ? '#FFFFFF' : colors.textSecondary },
+                  ]}
+                >
+                  Media Pool ({loopMediaPool.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Tab 1: DESCRIPTIONS */}
+            {loopTab === 'descriptions' && (
+              <View style={styles.tabBodyBox}>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>
+                    Add Descriptions (Single or Multi-line at a go)
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.textAreaInput,
+                      { backgroundColor: colors.surfaceVariant, color: colors.textPrimary, borderColor: colors.border },
+                    ]}
+                    placeholder="Type post caption or paste multiple lines at a go..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    numberOfLines={3}
+                    value={newDescInput}
+                    onChangeText={setNewDescInput}
+                  />
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleAddDescription}
+                    style={[styles.addDescBtn, { backgroundColor: colors.primary }]}
+                  >
+                    <Plus size={14} color="#FFFFFF" />
+                    <Text style={styles.addDescBtnText}>+ Add to Descriptions List</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Saved Descriptions */}
+                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>
+                  SAVED DESCRIPTIONS LIST ({loopDescriptions.length})
+                </Text>
+
+                {loopDescriptions.length === 0 ? (
+                  <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
+                    No descriptions added yet. Add at least 1 description for your loop posts.
+                  </Text>
+                ) : (
+                  loopDescriptions.map((desc, idx) => (
+                    <View
+                      key={idx}
+                      style={[styles.descListItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    >
+                      <View style={[styles.descNumBadge, { backgroundColor: colors.primaryContainer }]}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>#{idx + 1}</Text>
+                      </View>
+                      <Text style={[styles.descText, { color: colors.textPrimary }]}>{desc}</Text>
+                      <TouchableOpacity onPress={() => handleRemoveDescription(idx)} style={{ padding: 4 }}>
+                        <Trash2 size={16} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+
+            {/* Tab 2: MEDIA POOL */}
+            {loopTab === 'media' && (
+              <View style={styles.tabBodyBox}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleBulkPickMedia}
+                  style={[styles.bulkPickBtn, { backgroundColor: colors.primary }]}
+                >
+                  <Upload size={16} color="#FFFFFF" />
+                  <Text style={styles.bulkPickBtnText}>Bulk Pick Photos/Videos (Unlimited 100+)</Text>
+                </TouchableOpacity>
+
+                {/* Paste URL row */}
+                <View style={styles.pasteUrlRow}>
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      { flex: 1, backgroundColor: colors.surfaceVariant, color: colors.textPrimary, borderColor: colors.border },
+                    ]}
+                    placeholder="Paste photo/video URL..."
+                    placeholderTextColor={colors.textMuted}
+                    value={pastedUrl}
+                    onChangeText={setPastedUrl}
+                  />
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleAppendPastedUrl}
+                    style={[styles.urlAddBtn, { backgroundColor: colors.primaryContainer }]}
+                  >
+                    <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>+ Add URL</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Media Pool Grid */}
+                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>
+                  MEDIA POOL ITEMS ({loopMediaPool.length})
+                </Text>
+
+                {loopMediaPool.length === 0 ? (
+                  <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
+                    No media items in pool yet. Tap "Bulk Pick Photos/Videos" to select photos from phone storage.
+                  </Text>
+                ) : (
+                  <View style={styles.mediaPoolGrid}>
+                    {loopMediaPool.map((uri, idx) => (
+                      <View key={idx} style={styles.mediaGridCell}>
+                        <Image source={{ uri }} style={styles.mediaGridThumb} resizeMode="cover" />
+                        <TouchableOpacity
+                          onPress={() => handleRemoveMediaFromPool(idx)}
+                          style={styles.removeMediaBadge}
+                        >
+                          <Trash2 size={12} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        ) : (
+          <>
+            <View style={styles.postsHeaderRow}>
+              <Text style={[styles.sectionHeading, { color: colors.textSecondary }]}>
+                CONTAINER POSTS ({posts.length})
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleAddPost}
+                style={[styles.addPostBtn, { backgroundColor: colors.primaryContainer }]}
+              >
+                <Plus size={14} color={colors.primary} />
+                <Text style={[styles.addPostBtnText, { color: colors.primary }]}>+ Add Post</Text>
+              </TouchableOpacity>
+            </View>
+
+            {posts.map((item, index) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.postItemCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                {/* Minimized Header Row: First 5 Words + ... */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => togglePostExpanded(item.id)}
+                  style={styles.minimizedRow}
+                >
+                  <View style={styles.minimizedLeft}>
+                    <View style={[styles.indexBadge, { backgroundColor: colors.primaryContainer }]}>
+                      <Text style={[styles.indexText, { color: colors.primary }]}>#{index + 1}</Text>
+                    </View>
+                    <Text style={[styles.minimizedText, { color: colors.textPrimary }]}>
+                      {getFirst5Words(item.caption)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.minimizedRight}>
+                    {item.images.length > 0 && (
+                      <View style={[styles.mediaBadge, { backgroundColor: colors.surfaceVariant }]}>
+                        <ImageIcon size={12} color={colors.textSecondary} />
+                        <Text style={[styles.mediaCountText, { color: colors.textSecondary }]}>
+                          {item.images.length}
+                        </Text>
+                      </View>
+                    )}
+                    {item.expanded ? (
+                      <ChevronUp size={18} color={colors.textSecondary} />
+                    ) : (
+                      <ChevronDown size={18} color={colors.textSecondary} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+
+                {/* Expanded Post Editor */}
+                {item.expanded && (
+                  <View style={styles.expandedEditor}>
+                    <TextInput
+                      style={[
+                        styles.captionInput,
+                        {
+                          backgroundColor: colors.surfaceVariant,
+                          color: colors.textPrimary,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                      placeholder="Write post caption description..."
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      value={item.caption}
+                      onChangeText={(text) => handleUpdatePostCaption(item.id, text)}
+                    />
+
+                    {/* Hashtags & Mentions Suggestion Bar */}
+                    <Text style={[styles.suggestLabel, { color: colors.textSecondary }]}>
+                      QUICK HASHTAGS & MENTIONS
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
+                      {SAMPLE_HASHTAGS.map((tag) => (
+                        <TouchableOpacity
+                          key={tag}
+                          activeOpacity={0.8}
+                          onPress={() => handleAppendTag(item.id, tag)}
+                          style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}
+                        >
+                          <Tag size={10} color={colors.primary} />
+                          <Text style={[styles.tagPillText, { color: colors.primary }]}>{tag}</Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      {SAMPLE_MENTIONS.map((men) => (
+                        <TouchableOpacity
+                          key={men}
+                          activeOpacity={0.8}
+                          onPress={() => handleAppendTag(item.id, men)}
+                          style={[styles.tagPill, { backgroundColor: colors.surfaceVariant }]}
+                        >
+                          <AtSign size={10} color={colors.textSecondary} />
+                          <Text style={[styles.tagPillText, { color: colors.textPrimary }]}>{men}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+
+                    {/* Attached Media Header & Local Gallery Uploader */}
+                    <View style={styles.mediaHeaderRow}>
+                      <Text style={[styles.suggestLabel, { color: colors.textSecondary }]}>
+                        ATTACHED GALLERY ({item.images.length} photos/videos)
+                      </Text>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => handleOpenLocalPicker(item.id)}
+                        style={[styles.attachBtn, { backgroundColor: colors.primaryContainer }]}
+                      >
+                        <Upload size={12} color={colors.primary} />
+                        <Text style={[styles.attachBtnText, { color: colors.primary }]}>
+                          + Add Photos
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Gallery Thumbnails List with Trash Delete Buttons on each photo */}
+                    {item.images.length > 0 ? (
+                      <View>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          style={styles.galleryThumbnailsScroll}
+                        >
+                          {item.images.map((imgUri, imgIdx) => (
+                            <View key={imgIdx} style={styles.thumbWrapper}>
+                              <Image source={{ uri: imgUri }} style={styles.thumbImage} resizeMode="cover" />
+                              <TouchableOpacity
+                                activeOpacity={0.8}
+                                onPress={() => handleRemoveImage(item.id, imgIdx)}
+                                style={styles.trashIconBtn}
+                              >
+                                <Trash2 size={11} color="#FFFFFF" />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+
+                          {/* "+ Add More" Gallery Card */}
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => handleOpenLocalPicker(item.id)}
+                            style={[
+                              styles.addMoreThumbCard,
+                              {
+                                backgroundColor: colors.primaryContainer,
+                                borderColor: colors.primary,
+                              },
+                            ]}
+                          >
+                            <Plus size={18} color={colors.primary} />
+                            <Text style={[styles.addMoreThumbText, { color: colors.primary }]}>
+                              + Add More
+                            </Text>
+                          </TouchableOpacity>
+                        </ScrollView>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => handleOpenLocalPicker(item.id)}
+                        style={[styles.emptyMediaBox, { borderColor: colors.border }]}
+                      >
+                        <Upload size={24} color={colors.primary} />
+                        <Text style={[styles.emptyMediaText, { color: colors.textPrimary }]}>
+                          Tap to open Device Media Picker (Pick photos/videos)
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Custom Per-Post Date & Time Pickers (Only when Smart Scheduling is OFF) */}
+                    {!smartScheduling && (() => {
+                      const postVal = validateScheduledDateTime(item.scheduledDate, item.scheduledTime);
+                      return (
+                        <View style={styles.customDateTimeBlock}>
+                          <Text style={[styles.inputLabel, { color: colors.textPrimary, marginTop: 10 }]}>
+                            Individual Post Date & Time
+                          </Text>
+                          <View style={styles.dateTimeRow}>
+                            <View
+                              style={[
+                                styles.dateBox,
+                                {
+                                  backgroundColor: !postVal.valid ? '#FEF2F2' : colors.surfaceVariant,
+                                  borderColor: !postVal.valid ? '#EF4444' : colors.border,
+                                  borderWidth: !postVal.valid ? 2 : 1,
+                                },
+                              ]}
+                            >
+                              <CalendarIcon size={14} color={!postVal.valid ? '#EF4444' : colors.primary} />
+                              <TextInput
+                                style={[styles.dateInputText, { color: !postVal.valid ? '#EF4444' : colors.textPrimary }]}
+                                value={item.scheduledDate}
+                                onChangeText={(val) =>
+                                  setPosts(posts.map((p) => (p.id === item.id ? { ...p, scheduledDate: val } : p)))
+                                }
+                                onBlur={() =>
+                                  setPosts(
+                                    posts.map((p) =>
+                                      p.id === item.id
+                                        ? { ...p, scheduledDate: smartNormalizeDate(p.scheduledDate) }
+                                        : p
+                                    )
+                                  )
+                                }
+                                placeholder="YYYY-MM-DD"
+                                placeholderTextColor={colors.textMuted}
+                                //@ts-ignore
+                                type="date"
+                              />
+                            </View>
+
+                            <View
+                              style={[
+                                styles.timeBox,
+                                {
+                                  backgroundColor: !postVal.valid ? '#FEF2F2' : colors.surfaceVariant,
+                                  borderColor: !postVal.valid ? '#EF4444' : colors.border,
+                                  borderWidth: !postVal.valid ? 2 : 1,
+                                },
+                              ]}
+                            >
+                              <Clock size={14} color={!postVal.valid ? '#EF4444' : colors.primary} />
+                              <TextInput
+                                style={[styles.timeInputText, { color: !postVal.valid ? '#EF4444' : colors.textPrimary }]}
+                                value={item.scheduledTime}
+                                onChangeText={(val) =>
+                                  setPosts(posts.map((p) => (p.id === item.id ? { ...p, scheduledTime: val } : p)))
+                                }
+                                onBlur={() =>
+                                  setPosts(
+                                    posts.map((p) =>
+                                      p.id === item.id
+                                        ? { ...p, scheduledTime: smartNormalizeTime(p.scheduledTime) }
+                                        : p
+                                    )
+                                  )
+                                }
+                                placeholder="14:30"
+                                placeholderTextColor={colors.textMuted}
+                                //@ts-ignore
+                                type="time"
+                              />
+                            </View>
+                          </View>
+
+                          {!postVal.valid && (
+                            <View style={styles.errorAlertBox}>
+                              <AlertCircle size={13} color="#EF4444" />
+                              <Text style={styles.errorAlertText}>{postVal.error}</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })()}
+
+                    {/* Post Bottom Actions: Done & Delete Post */}
+                    <View style={styles.postBottomActionsRow}>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => togglePostExpanded(item.id)}
+                        style={[styles.donePostBtn, { backgroundColor: colors.primaryContainer }]}
+                      >
+                        <Check size={14} color={colors.primary} />
+                        <Text style={[styles.donePostText, { color: colors.primary }]}>Done</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => handleRemovePost(item.id)}
+                        style={styles.deletePostRow}
+                      >
+                        <Trash2 size={14} color={colors.danger} />
+                        <Text style={[styles.deletePostText, { color: colors.danger }]}>Delete Post</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* Save Container Button */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => {
+            if (!isFormTimeValid) {
+              const err = !startValidation.valid
+                ? startValidation.error
+                : invalidCustomPost
+                ? `Post "${getFirst5Words(invalidCustomPost.caption)}": ${
+                    validateScheduledDateTime(
+                      invalidCustomPost.scheduledDate,
+                      invalidCustomPost.scheduledTime
+                    ).error
+                  }`
+                : 'Please select a time at least 10 minutes in the future.';
+              Alert.alert('Cannot Save Container', err);
+              return;
+            }
+            handleSaveContainer();
+          }}
+          style={[
+            styles.saveBtn,
+            { backgroundColor: isFormTimeValid ? colors.primary : '#EF4444' },
+          ]}
+        >
+          {isFormTimeValid ? <Check size={18} color="#FFFFFF" /> : <AlertCircle size={18} color="#FFFFFF" />}
+          <Text style={styles.saveBtnText}>
+            {isFormTimeValid
+              ? existingContainer
+                ? 'Save Container'
+                : 'Create & Save Container'
+              : 'Fix Time (Min 10 mins in future)'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </AnimatedSheet>
+  );
+};
+
+const styles = StyleSheet.create({
+  containerScroll: {
+    flex: 1,
+    maxHeight: '100%',
+  },
+  scrollPaddingBottom: {
+    paddingBottom: 120,
+  },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  inputGroup: {
+    marginBottom: 12,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  textInput: {
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 14,
+  },
+  tickPlatformsGrid: {
+    gap: 8,
+  },
+  tickPlatformCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  collapsibleHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  collapsibleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsibleRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  selectedSummaryText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tickLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  tickLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  minimizedSmartLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  minimizedSmartText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  smartCard: {
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  smartRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  smartLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  smartTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  smartSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  smartSettingsBody: {
+    marginTop: 10,
+  },
+  intervalScroll: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  intervalChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  intervalChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  customMinutesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  customMinutesText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  minutesInput: {
+    width: 60,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  minutesSuffix: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dateTimeSection: {
+    marginTop: 4,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dateBox: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    gap: 8,
+  },
+  dateInputText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    // @ts-ignore
+    outlineStyle: 'none',
+    outlineWidth: 0,
+  },
+  timeBox: {
+    width: 110,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    gap: 8,
+  },
+  timeInputText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    // @ts-ignore
+    outlineStyle: 'none',
+    outlineWidth: 0,
+  },
+  endDateSection: {
+    marginTop: 14,
+  },
+  endDateHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  endDateLeft: {
+    flex: 1,
+  },
+  infinityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 8,
+  },
+  infinityBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  postsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    marginTop: 10,
+  },
+  addPostBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 4,
+  },
+  addPostBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  postItemCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  minimizedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  minimizedLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  indexBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  indexText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  minimizedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  minimizedRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mediaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  mediaCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  expandedEditor: {
+    paddingHorizontal: 12,
+    paddingBottom: 14,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  captionInput: {
+    minHeight: 70,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    fontSize: 13,
+    textAlignVertical: 'top',
+  },
+  suggestLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  tagScroll: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  tagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginRight: 6,
+    gap: 4,
+  },
+  tagPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  mediaHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  attachBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 5,
+  },
+  attachBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  emptyMediaBox: {
+    height: 90,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    gap: 6,
+  },
+  emptyMediaText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  galleryThumbnailsScroll: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  thumbWrapper: {
+    width: 68,
+    height: 68,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    marginRight: 8,
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  trashIconBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+  },
+  addMoreThumbCard: {
+    width: 68,
+    height: 68,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    gap: 2,
+  },
+  addMoreThumbText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  customDateTimeBlock: {
+    marginTop: 4,
+  },
+  errorAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorAlertText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#EF4444',
+    flex: 1,
+  },
+  postBottomActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  donePostBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 6,
+  },
+  donePostText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  deletePostRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deletePostText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  fbPageSelectorBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  fbPageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  fbPageLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  fbPagesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  fbPageChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  fbPageChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  noFbPageText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 16,
+    marginTop: 16,
+    marginBottom: 20,
+    gap: 8,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  loopToggleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    marginBottom: 12,
+  },
+  loopToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    paddingRight: 8,
+  },
+  loopToggleTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  loopToggleSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  loopMediaCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  loopMediaCountLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mediaCountControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mediaCountBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaCountBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  mediaCountVal: {
+    fontSize: 15,
+    fontWeight: '800',
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  loopSectionContainer: {
+    marginTop: 8,
+  },
+  tabBarRow: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 14,
+  },
+  tabItemBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  tabItemBtnActive: {
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  tabItemText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  tabBodyBox: {
+    paddingVertical: 4,
+  },
+  textAreaInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 13,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  addDescBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 42,
+    borderRadius: 12,
+    marginTop: 10,
+    gap: 6,
+  },
+  addDescBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  descListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 10,
+  },
+  descNumBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  descText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  emptyHintText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginVertical: 10,
+  },
+  bulkPickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 46,
+    borderRadius: 14,
+    gap: 8,
+    marginBottom: 12,
+  },
+  bulkPickBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  pasteUrlRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  urlAddBtn: {
+    height: 42,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPoolGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  mediaGridCell: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  mediaGridThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  removeMediaBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

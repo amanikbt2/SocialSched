@@ -11,11 +11,11 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  mode: 'dark',
-  colors: darkColors,
-  isDark: true,
+  mode: 'light',
+  colors: lightColors,
+  isDark: false,
   setMode: async (mode: ThemeMode) => {
-    const isDark = mode === 'dark' || (mode === 'system' ? true : false); // Default dark for system
+    const isDark = mode === 'dark' ? true : false;
     const colors = isDark ? darkColors : lightColors;
     await AsyncStorage.setItem('syncflow_theme_mode', mode);
     set({ mode, colors, isDark });
@@ -24,8 +24,10 @@ export const useThemeStore = create<ThemeState>((set) => ({
     try {
       const savedMode = (await AsyncStorage.getItem('syncflow_theme_mode')) as ThemeMode | null;
       if (savedMode) {
-        const isDark = savedMode === 'dark' || (savedMode === 'system' ? true : false);
+        const isDark = savedMode === 'dark' ? true : false;
         set({ mode: savedMode, colors: isDark ? darkColors : lightColors, isDark });
+      } else {
+        set({ mode: 'light', colors: lightColors, isDark: false });
       }
     } catch (e) {
       console.warn('Failed to load theme preference', e);

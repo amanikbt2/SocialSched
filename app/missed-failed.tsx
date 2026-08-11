@@ -18,6 +18,14 @@ export default function MissedFailedScreen() {
 
   const problemPosts = posts.filter((p) => p.status === 'failed' || p.status === 'missed');
 
+  const handleSafeBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   const handleRetryAll = async () => {
     for (const post of problemPosts) {
       await updatePost(post.id, {
@@ -27,7 +35,7 @@ export default function MissedFailedScreen() {
       });
     }
     setEngineState('processing');
-    router.back();
+    handleSafeBack();
   };
 
   const handleRetrySingle = async (postId: string) => {
@@ -43,7 +51,7 @@ export default function MissedFailedScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity activeOpacity={0.8} onPress={handleSafeBack} style={styles.backBtn}>
           <ArrowLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Missed & Failed Posts</Text>

@@ -36,11 +36,17 @@ function createWebDatabase() {
 
       if (sqlLower.startsWith('insert into campaigns')) {
         const [id, title, description, category, color, icon, createdAt] = params;
-        memoryStore.campaigns.push({ id, title, description, category, color, icon, createdAt });
+        const exists = memoryStore.campaigns.find((c) => c.id === id);
+        if (!exists) {
+          memoryStore.campaigns.push({ id, title, description, category, color, icon, createdAt });
+        }
         await AsyncStorage.setItem('syncflow_web_campaigns', JSON.stringify(memoryStore.campaigns));
       } else if (sqlLower.startsWith('insert into posts')) {
         const [id, campaignId, caption, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt] = params;
-        memoryStore.posts.push({ id, campaignId, caption, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt });
+        const exists = memoryStore.posts.find((p) => p.id === id);
+        if (!exists) {
+          memoryStore.posts.push({ id, campaignId, caption, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt });
+        }
         await AsyncStorage.setItem('syncflow_web_posts', JSON.stringify(memoryStore.posts));
       } else if (sqlLower.startsWith('insert into media')) {
         const [id, uri, type, name, folder, isFavorite, size, createdAt] = params;
@@ -90,7 +96,6 @@ function createWebDatabase() {
         return memoryStore.campaigns as any as T[];
       }
       if (sqlLower.includes('from posts')) {
-        const saved = await AsyncStorage.setItem('syncflow_web_posts', JSON.stringify(memoryStore.posts));
         const stored = await AsyncStorage.getItem('syncflow_web_posts');
         if (stored) memoryStore.posts = JSON.parse(stored);
         return memoryStore.posts as any as T[];
@@ -127,6 +132,12 @@ async function seedWebInitialData(database: any) {
       category: 'Funny Memes',
       color: '#EC4899',
       icon: 'smile',
+      platforms: ['facebook', 'instagram'],
+      smartSchedulingEnabled: true,
+      intervalMinutes: 60,
+      startDate: now.toISOString(),
+      startTime: '09:00',
+      isPaused: false,
       createdAt: new Date(now.getTime() - 86400000 * 5).toISOString(),
     },
     {
@@ -136,6 +147,12 @@ async function seedWebInitialData(database: any) {
       category: 'Daily Quotes',
       color: '#8B5CF6',
       icon: 'quote',
+      platforms: ['facebook', 'instagram'],
+      smartSchedulingEnabled: true,
+      intervalMinutes: 60,
+      startDate: now.toISOString(),
+      startTime: '09:00',
+      isPaused: false,
       createdAt: new Date(now.getTime() - 86400000 * 4).toISOString(),
     },
     {
@@ -145,6 +162,12 @@ async function seedWebInitialData(database: any) {
       category: 'Business Ads',
       color: '#3B82F6',
       icon: 'briefcase',
+      platforms: ['facebook', 'x'],
+      smartSchedulingEnabled: true,
+      intervalMinutes: 120,
+      startDate: now.toISOString(),
+      startTime: '09:00',
+      isPaused: false,
       createdAt: new Date(now.getTime() - 86400000 * 3).toISOString(),
     },
     {
@@ -154,6 +177,12 @@ async function seedWebInitialData(database: any) {
       category: 'Travel',
       color: '#10B981',
       icon: 'compass',
+      platforms: ['instagram', 'tiktok'],
+      smartSchedulingEnabled: true,
+      intervalMinutes: 60,
+      startDate: now.toISOString(),
+      startTime: '09:00',
+      isPaused: false,
       createdAt: new Date(now.getTime() - 86400000 * 2).toISOString(),
     },
     {
@@ -163,6 +192,12 @@ async function seedWebInitialData(database: any) {
       category: 'Football',
       color: '#F59E0B',
       icon: 'activity',
+      platforms: ['facebook', 'tiktok'],
+      smartSchedulingEnabled: true,
+      intervalMinutes: 30,
+      startDate: now.toISOString(),
+      startTime: '09:00',
+      isPaused: false,
       createdAt: new Date(now.getTime() - 86400000 * 1).toISOString(),
     },
   ];

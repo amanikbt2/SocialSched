@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Campaign, Post, PostStatus, SocialPlatform } from '../db/types';
 import { getDatabase } from '../db/database';
+import { generateLoopPosts } from '../services/loopContainerEngine';
 
 interface CampaignState {
   campaigns: Campaign[];
@@ -12,11 +13,12 @@ interface CampaignState {
   
   // Actions
   loadData: () => Promise<void>;
-  addCampaign: (title: string, category: string, color: string, description?: string) => Promise<Campaign>;
-  updateCampaign: (id: string, updates: Partial<Campaign>) => Promise<void>;
+  addCampaign: (campaignOrTitle: Campaign | string, category?: string, color?: string, description?: string) => Promise<Campaign>;
+  updateCampaign: (id: string | Campaign, updates?: Partial<Campaign>) => Promise<void>;
   deleteCampaign: (id: string) => Promise<void>;
+  toggleCampaignPause: (id: string) => Promise<void>;
   
-  addPost: (post: Omit<Post, 'id' | 'createdAt' | 'updatedAt' | 'uploadProgress'>) => Promise<Post>;
+  addPost: (post: any) => Promise<Post>;
   updatePost: (id: string, updates: Partial<Post>) => Promise<void>;
   deletePost: (id: string) => Promise<void>;
   duplicatePost: (id: string) => Promise<Post | null>;
@@ -28,6 +30,8 @@ interface CampaignState {
   setSelectedStatus: (status: PostStatus | 'all') => void;
   
   checkMissedPosts: () => Promise<void>;
+  triggerNextLoop: (containerId: string) => Promise<void>;
+  addMediaToLoopPool: (containerId: string, newUris: string[]) => Promise<void>;
 }
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
@@ -49,10 +53,26 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         id: c.id,
         title: c.title,
         description: c.description || '',
-        category: c.category,
-        color: c.color,
+        category: c.category || 'General',
+        color: c.color || '#4F46E5',
         icon: c.icon || 'folder',
-        createdAt: c.createdAt,
+        thumbnailUri: c.thumbnailUri,
+        platforms: c.platforms ? (typeof c.platforms === 'string' ? JSON.parse(c.platforms) : c.platforms) : ['facebook', 'instagram'],
+        smartSchedulingEnabled: c.smartSchedulingEnabled !== undefined ? Boolean(c.smartSchedulingEnabled) : true,
+        intervalMinutes: c.intervalMinutes || 60,
+        startDate: c.startDate || new Date().toISOString(),
+        startTime: c.startTime || '09:00',
+        hasEndDateLimit: Boolean(c.hasEndDateLimit),
+        endDate: c.endDate,
+        isPaused: Boolean(c.isPaused),
+        createdAt: c.createdAt || new Date().toISOString(),
+        isLoopContainer: Boolean(c.isLoopContainer),
+        mediaPerPost: c.mediaPerPost || 1,
+        loopDescriptions: c.loopDescriptions ? (typeof c.loopDescriptions === 'string' ? JSON.parse(c.loopDescriptions) : c.loopDescriptions) : [],
+        loopMediaPool: c.loopMediaPool ? (typeof c.loopMediaPool === 'string' ? JSON.parse(c.loopMediaPool) : c.loopMediaPool) : [],
+        usedMediaUris: c.usedMediaUris ? (typeof c.usedMediaUris === 'string' ? JSON.parse(c.usedMediaUris) : c.usedMediaUris) : [],
+        currentLoopRound: c.currentLoopRound || 1,
+        isLoopCompleted: Boolean(c.isLoopCompleted),
       }));
 
       const posts: Post[] = rawPosts.map((p) => ({
@@ -68,6 +88,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         failureReason: p.failureReason || null,
         uploadProgress: p.uploadProgress || 0,
         tags: JSON.parse(p.tags || '[]'),
+        hashtags: JSON.parse(p.hashtags || '[]'),
+        mentions: JSON.parse(p.mentions || '[]'),
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
       }));
@@ -75,119 +97,226 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       set({ campaigns, posts, isLoading: false });
       await get().checkMissedPosts();
     } catch (error) {
-      console.error('Error loading campaign data:', error);
+      console.warn('Loading campaign data fallback:', error);
       set({ isLoading: false });
     }
   },
 
-  addCampaign: async (title, category, color, description = '') => {
-    const db = await getDatabase();
-    const newCampaign: Campaign = {
-      id: `camp-${Date.now()}`,
-      title,
-      description,
-      category,
-      color,
-      icon: 'folder',
-      createdAt: new Date().toISOString(),
-    };
+  addCampaign: async (campaignOrTitle, category = 'General', color = '#4F46E5', description = '') => {
+    let newCampaign: Campaign;
+    if (typeof campaignOrTitle === 'object') {
+      newCampaign = campaignOrTitle;
+    } else {
+      newCampaign = {
+        id: `camp-${Date.now()}`,
+        title: campaignOrTitle,
+        description,
+        category,
+        color,
+        icon: 'folder',
+        platforms: ['facebook', 'instagram'],
+        smartSchedulingEnabled: true,
+        intervalMinutes: 60,
+        startDate: new Date().toISOString(),
+        startTime: '09:00',
+        isPaused: false,
+        createdAt: new Date().toISOString(),
+      };
+    }
 
-    await db.runAsync(
-      `INSERT INTO campaigns (id, title, description, category, color, icon, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?);`,
-      [newCampaign.id, newCampaign.title, newCampaign.description, newCampaign.category, newCampaign.color, newCampaign.icon!, newCampaign.createdAt]
-    );
+    try {
+      const db = await getDatabase();
+      await db.runAsync(
+        `INSERT INTO campaigns (id, title, description, category, color, icon, thumbnailUri, platforms, smartSchedulingEnabled, intervalMinutes, startDate, startTime, hasEndDateLimit, endDate, isPaused, createdAt, isLoopContainer, mediaPerPost, loopDescriptions, loopMediaPool, usedMediaUris, currentLoopRound, isLoopCompleted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          newCampaign.id,
+          newCampaign.title,
+          newCampaign.description,
+          newCampaign.category,
+          newCampaign.color,
+          newCampaign.icon || 'folder',
+          newCampaign.thumbnailUri || null,
+          JSON.stringify(newCampaign.platforms || ['facebook', 'instagram']),
+          newCampaign.smartSchedulingEnabled ? 1 : 0,
+          newCampaign.intervalMinutes || 60,
+          newCampaign.startDate,
+          newCampaign.startTime,
+          newCampaign.hasEndDateLimit ? 1 : 0,
+          newCampaign.endDate || null,
+          newCampaign.isPaused ? 1 : 0,
+          newCampaign.createdAt,
+          newCampaign.isLoopContainer ? 1 : 0,
+          newCampaign.mediaPerPost || 1,
+          JSON.stringify(newCampaign.loopDescriptions || []),
+          JSON.stringify(newCampaign.loopMediaPool || []),
+          JSON.stringify(newCampaign.usedMediaUris || []),
+          newCampaign.currentLoopRound || 1,
+          newCampaign.isLoopCompleted ? 1 : 0,
+        ]
+      );
+    } catch (e) {
+      console.warn('DB Insert fallback for campaign:', e);
+    }
 
-    set((state) => ({ campaigns: [newCampaign, ...state.campaigns] }));
+    set((state) => ({ campaigns: [newCampaign, ...state.campaigns.filter(c => c.id !== newCampaign.id)] }));
     return newCampaign;
   },
 
-  updateCampaign: async (id, updates) => {
-    const db = await getDatabase();
-    const current = get().campaigns.find((c) => c.id === id);
-    if (!current) return;
-    const updated = { ...current, ...updates };
+  updateCampaign: async (idOrObj, updates) => {
+    let targetId: string;
+    let newUpdates: Partial<Campaign>;
 
-    await db.runAsync(
-      `UPDATE campaigns SET title = ?, description = ?, category = ?, color = ? WHERE id = ?;`,
-      [updated.title, updated.description, updated.category, updated.color, id]
-    );
+    if (typeof idOrObj === 'object') {
+      targetId = idOrObj.id;
+      newUpdates = idOrObj;
+    } else {
+      targetId = idOrObj;
+      newUpdates = updates || {};
+    }
+
+    const current = get().campaigns.find((c) => c.id === targetId);
+    if (!current && typeof idOrObj !== 'object') return;
+    const updated = { ...current, ...newUpdates } as Campaign;
+
+    try {
+      const db = await getDatabase();
+      await db.runAsync(
+        `UPDATE campaigns SET title = ?, description = ?, category = ?, color = ?, icon = ?, thumbnailUri = ?, platforms = ?, smartSchedulingEnabled = ?, intervalMinutes = ?, startDate = ?, startTime = ?, hasEndDateLimit = ?, endDate = ?, isPaused = ?, isLoopContainer = ?, mediaPerPost = ?, loopDescriptions = ?, loopMediaPool = ?, usedMediaUris = ?, currentLoopRound = ?, isLoopCompleted = ? WHERE id = ?;`,
+        [
+          updated.title,
+          updated.description,
+          updated.category,
+          updated.color,
+          updated.icon || 'folder',
+          updated.thumbnailUri || null,
+          JSON.stringify(updated.platforms || ['facebook', 'instagram']),
+          updated.smartSchedulingEnabled ? 1 : 0,
+          updated.intervalMinutes || 60,
+          updated.startDate,
+          updated.startTime,
+          updated.hasEndDateLimit ? 1 : 0,
+          updated.endDate || null,
+          updated.isPaused ? 1 : 0,
+          updated.isLoopContainer ? 1 : 0,
+          updated.mediaPerPost || 1,
+          JSON.stringify(updated.loopDescriptions || []),
+          JSON.stringify(updated.loopMediaPool || []),
+          JSON.stringify(updated.usedMediaUris || []),
+          updated.currentLoopRound || 1,
+          updated.isLoopCompleted ? 1 : 0,
+          targetId,
+        ]
+      );
+    } catch (e) {
+      console.warn('DB update campaign fallback:', e);
+    }
 
     set((state) => ({
-      campaigns: state.campaigns.map((c) => (c.id === id ? updated : c)),
+      campaigns: state.campaigns.map((c) => (c.id === targetId ? updated : c)),
     }));
   },
 
+  toggleCampaignPause: async (id: string) => {
+    const target = get().campaigns.find((c) => c.id === id);
+    if (!target) return;
+    const isPaused = !target.isPaused;
+    await get().updateCampaign(id, { isPaused });
+  },
+
   deleteCampaign: async (id) => {
-    const db = await getDatabase();
-    await db.runAsync(`DELETE FROM campaigns WHERE id = ?;`, [id]);
+    try {
+      const db = await getDatabase();
+      await db.runAsync(`DELETE FROM posts WHERE campaignId = ?;`, [id]);
+      await db.runAsync(`DELETE FROM campaigns WHERE id = ?;`, [id]);
+    } catch (e) {
+      console.warn('DB delete campaign fallback:', e);
+    }
+
     set((state) => ({
       campaigns: state.campaigns.filter((c) => c.id !== id),
-      posts: state.posts.map((p) => (p.campaignId === id ? { ...p, campaignId: null } : p)),
+      posts: state.posts.filter((p) => p.campaignId !== id),
     }));
   },
 
   addPost: async (postData) => {
-    const db = await getDatabase();
-    const now = new Date().toISOString();
     const newPost: Post = {
-      ...postData,
-      id: `post-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      uploadProgress: 0,
-      createdAt: now,
-      updatedAt: now,
+      id: postData.id || `post-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      campaignId: postData.campaignId || null,
+      caption: postData.caption || '',
+      images: postData.images || [],
+      videos: postData.videos || [],
+      platforms: postData.platforms || ['facebook', 'instagram'],
+      scheduledAt: postData.scheduledAt || new Date().toISOString(),
+      status: postData.status || 'scheduled',
+      notes: postData.notes || '',
+      failureReason: postData.failureReason || null,
+      uploadProgress: postData.uploadProgress || 0,
+      tags: postData.tags || [],
+      hashtags: postData.hashtags || [],
+      mentions: postData.mentions || [],
+      createdAt: postData.createdAt || new Date().toISOString(),
+      updatedAt: postData.updatedAt || new Date().toISOString(),
     };
 
-    await db.runAsync(
-      `INSERT INTO posts (id, campaignId, caption, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-      [
-        newPost.id,
-        newPost.campaignId,
-        newPost.caption,
-        JSON.stringify(newPost.images),
-        JSON.stringify(newPost.videos),
-        JSON.stringify(newPost.platforms),
-        newPost.scheduledAt,
-        newPost.status,
-        newPost.notes,
-        newPost.failureReason,
-        newPost.uploadProgress,
-        JSON.stringify(newPost.tags),
-        newPost.createdAt,
-        newPost.updatedAt,
-      ]
-    );
+    try {
+      const db = await getDatabase();
+      await db.runAsync(
+        `INSERT INTO posts (id, campaignId, caption, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          newPost.id,
+          newPost.campaignId,
+          newPost.caption,
+          JSON.stringify(newPost.images),
+          JSON.stringify(newPost.videos),
+          JSON.stringify(newPost.platforms),
+          newPost.scheduledAt,
+          newPost.status,
+          newPost.notes,
+          newPost.failureReason,
+          newPost.uploadProgress,
+          JSON.stringify(newPost.tags),
+          newPost.createdAt,
+          newPost.updatedAt,
+        ]
+      );
+    } catch (e) {
+      console.warn('DB insert post fallback:', e);
+    }
 
-    set((state) => ({ posts: [...state.posts, newPost] }));
+    set((state) => ({ posts: [...state.posts.filter(p => p.id !== newPost.id), newPost] }));
     return newPost;
   },
 
   updatePost: async (id, updates) => {
-    const db = await getDatabase();
     const current = get().posts.find((p) => p.id === id);
     if (!current) return;
+    const updated = { ...current, ...updates, updatedAt: new Date().toISOString() };
 
-    const updated: Post = { ...current, ...updates, updatedAt: new Date().toISOString() };
-
-    await db.runAsync(
-      `UPDATE posts SET campaignId = ?, caption = ?, images = ?, videos = ?, platforms = ?, scheduledAt = ?, status = ?, notes = ?, failureReason = ?, uploadProgress = ?, tags = ?, updatedAt = ?
-       WHERE id = ?;`,
-      [
-        updated.campaignId,
-        updated.caption,
-        JSON.stringify(updated.images),
-        JSON.stringify(updated.videos),
-        JSON.stringify(updated.platforms),
-        updated.scheduledAt,
-        updated.status,
-        updated.notes,
-        updated.failureReason,
-        updated.uploadProgress,
-        JSON.stringify(updated.tags),
-        updated.updatedAt,
-        id,
-      ]
-    );
+    try {
+      const db = await getDatabase();
+      await db.runAsync(
+        `UPDATE posts SET campaignId = ?, caption = ?, images = ?, videos = ?, platforms = ?, scheduledAt = ?, status = ?, notes = ?, failureReason = ?, uploadProgress = ?, tags = ?, updatedAt = ? WHERE id = ?;`,
+        [
+          updated.campaignId,
+          updated.caption,
+          JSON.stringify(updated.images),
+          JSON.stringify(updated.videos),
+          JSON.stringify(updated.platforms),
+          updated.scheduledAt,
+          updated.status,
+          updated.notes,
+          updated.failureReason,
+          updated.uploadProgress,
+          JSON.stringify(updated.tags),
+          updated.updatedAt,
+          id,
+        ]
+      );
+    } catch (e) {
+      console.warn('DB update post fallback:', e);
+    }
 
     set((state) => ({
       posts: state.posts.map((p) => (p.id === id ? updated : p)),
@@ -195,31 +324,26 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   },
 
   deletePost: async (id) => {
-    const db = await getDatabase();
-    await db.runAsync(`DELETE FROM posts WHERE id = ?;`, [id]);
+    try {
+      const db = await getDatabase();
+      await db.runAsync(`DELETE FROM posts WHERE id = ?;`, [id]);
+    } catch (e) {
+      console.warn('DB delete post fallback:', e);
+    }
+
     set((state) => ({
       posts: state.posts.filter((p) => p.id !== id),
     }));
   },
 
   duplicatePost: async (id) => {
-    const target = get().posts.find((p) => p.id === id);
-    if (!target) return null;
-
-    const duplicatedPostData = {
-      campaignId: target.campaignId,
-      caption: `${target.caption} (Copy)`,
-      images: [...target.images],
-      videos: [...target.videos],
-      platforms: [...target.platforms],
-      scheduledAt: new Date(Date.now() + 86400000).toISOString(), // +1 day
-      status: 'draft' as PostStatus,
-      notes: target.notes,
-      failureReason: null,
-      tags: [...target.tags],
-    };
-
-    return await get().addPost(duplicatedPostData);
+    const source = get().posts.find((p) => p.id === id);
+    if (!source) return null;
+    const { id: _, createdAt: __, updatedAt: ___, ...rest } = source;
+    return await get().addPost({
+      ...rest,
+      caption: `${source.caption} (Copy)`,
+    });
   },
 
   movePost: async (postId, targetCampaignId) => {
@@ -230,23 +354,79 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     set({ posts: reorderedPosts });
   },
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSelectedTag: (tag) => set({ selectedTag: tag }),
-  setSelectedStatus: (status) => set({ selectedStatus: status }),
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  setSelectedTag: (selectedTag) => set({ selectedTag }),
+  setSelectedStatus: (selectedStatus) => set({ selectedStatus }),
 
   checkMissedPosts: async () => {
     const now = new Date();
-    const { posts, updatePost } = get();
-    for (const post of posts) {
-      if (
-        (post.status === 'scheduled' || post.status === 'waiting') &&
-        new Date(post.scheduledAt) < now
-      ) {
-        await updatePost(post.id, {
-          status: 'missed',
-          failureReason: 'Scheduled time passed while app was closed or offline.',
-        });
+    const currentPosts = get().posts;
+    let hasChanges = false;
+
+    const updated = currentPosts.map((post) => {
+      if (post.status === 'scheduled' || post.status === 'waiting') {
+        const schedDate = new Date(post.scheduledAt);
+        if (schedDate < now) {
+          hasChanges = true;
+          return { ...post, status: 'missed' as PostStatus, updatedAt: now.toISOString() };
+        }
       }
+      return post;
+    });
+
+    if (hasChanges) {
+      set({ posts: updated });
     }
+  },
+
+  triggerNextLoop: async (containerId: string) => {
+    const container = get().campaigns.find((c) => c.id === containerId);
+    if (!container || !container.isLoopContainer) return;
+
+    const newRound = (container.currentLoopRound || 1) + 1;
+    const todayISO = new Date().toISOString().split('T')[0];
+    const startTime = container.startTime || '09:00';
+
+    const result = generateLoopPosts({
+      container: { ...container, currentLoopRound: newRound },
+      loopDescriptions: container.loopDescriptions || [],
+      loopMediaPool: container.loopMediaPool || [],
+      usedMediaUris: [], // Reset used media list for the new loop round!
+      mediaPerPost: container.mediaPerPost || 1,
+      startDate: todayISO,
+      startTime: startTime,
+      endDate: container.endDate,
+      intervalMinutes: container.intervalMinutes || 60,
+      platforms: container.platforms || ['facebook', 'instagram'],
+    });
+
+    const updatedContainer: Campaign = {
+      ...container,
+      usedMediaUris: result.updatedUsedMediaUris,
+      currentLoopRound: newRound,
+      isLoopCompleted: result.isLoopCompleted,
+      startDate: todayISO,
+    };
+
+    await get().updateCampaign(updatedContainer);
+
+    for (const post of result.newPosts) {
+      await get().addPost(post);
+    }
+  },
+
+  addMediaToLoopPool: async (containerId: string, newUris: string[]) => {
+    const container = get().campaigns.find((c) => c.id === containerId);
+    if (!container || !newUris || newUris.length === 0) return;
+
+    const currentPool = container.loopMediaPool || [];
+    const updatedPool = [...currentPool, ...newUris];
+    const unusedCount = updatedPool.length - (container.usedMediaUris || []).length;
+    const isLoopCompleted = unusedCount < (container.mediaPerPost || 1);
+
+    await get().updateCampaign(containerId, {
+      loopMediaPool: updatedPool,
+      isLoopCompleted,
+    });
   },
 }));

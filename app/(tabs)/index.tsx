@@ -1,212 +1,278 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+} from 'react-native';
 import { Header } from '../../src/components/common/Header';
-import { Card } from '../../src/components/common/Card';
-import { Badge } from '../../src/components/common/Badge';
-import { FAB } from '../../src/components/common/FAB';
-import { PlatformBadge } from '../../src/components/common/PlatformBadge';
+import { ContainerCard } from '../../src/components/container/ContainerCard';
+import { AddContainerModal } from '../../src/components/container/AddContainerModal';
+import { AnimatedSheet } from '../../src/components/common/AnimatedSheet';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
-import { useQueueStore } from '../../src/stores/useQueueStore';
-import { Calendar, Layers, AlertCircle, CheckCircle2, Clock, Sparkles, Database, Wifi, Activity } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
-import { format, isToday } from 'date-fns';
+import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
+import { fetchMetaScheduledPostsCount } from '../../src/services/facebookPublisher';
+import { Container } from '../../src/db/types';
+import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2 } from 'lucide-react-native';
 
 export default function HomeScreen() {
   const colors = useThemeStore((state) => state.colors);
-  const { campaigns, posts } = useCampaignStore();
-  const { networkStatus, engineState } = useQueueStore();
-  const router = useRouter();
+  const { campaigns, posts, toggleCampaignPause, deleteCampaign, loadData } = useCampaignStore();
+  const { accounts, loadSavedAccounts } = useSocialAccountsStore();
 
-  const todayPosts = posts.filter((p) => isToday(new Date(p.scheduledAt)));
-  const upcomingPosts = posts
-    .filter((p) => p.status === 'scheduled' || p.status === 'waiting')
-    .slice(0, 3);
-  const failedCount = posts.filter((p) => p.status === 'failed' || p.status === 'missed').length;
-  const publishedCount = posts.filter((p) => p.status === 'published').length;
-  const scheduledCount = posts.filter((p) => p.status === 'scheduled' || p.status === 'waiting').length;
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingContainer, setEditingContainer] = useState<Container | null>(null);
+  const [metaServerScheduledCount, setMetaServerScheduledCount] = useState<number | null>(null);
+  const [scheduledPopupVisible, setScheduledPopupVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fbAccount = accounts.find((a) => a.platform === 'facebook' && a.isConnected);
+
+  // Scheduled / Waiting posts list for popup verification
+  const scheduledPosts = posts.filter(
+    (p) => p.status === 'scheduled' || p.status === 'waiting'
+  );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    await loadSavedAccounts();
+
+    if (fbAccount && fbAccount.accessToken && fbAccount.isConnected) {
+      const count = await fetchMetaScheduledPostsCount(
+        fbAccount.accessToken,
+        fbAccount.pageId || 'me'
+      );
+      setMetaServerScheduledCount(Math.max(count, scheduledPosts.length));
+    }
+    setRefreshing(false);
+  }, [fbAccount?.accessToken, fbAccount?.isConnected, fbAccount?.pageId, loadData, loadSavedAccounts, scheduledPosts.length]);
+
+  // Fetch live scheduled posts directly from Meta Graph API with instant local fallback
+  useEffect(() => {
+    let isMounted = true;
+    const localScheduledCount = scheduledPosts.length;
+
+    if (fbAccount && fbAccount.accessToken && fbAccount.isConnected) {
+      fetchMetaScheduledPostsCount(fbAccount.accessToken, fbAccount.pageId || 'me')
+        .then((count) => {
+          if (isMounted) {
+            setMetaServerScheduledCount(Math.max(count, localScheduledCount));
+          }
+        })
+        .catch(() => {
+          if (isMounted) setMetaServerScheduledCount(localScheduledCount);
+        });
+    } else {
+      if (isMounted) setMetaServerScheduledCount(localScheduledCount);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fbAccount?.accessToken, fbAccount?.isConnected, posts]);
+
+  const handleOpenAdd = () => {
+    setEditingContainer(null);
+    setModalVisible(true);
+  };
+
+  const handleEditContainer = (container: Container) => {
+    setEditingContainer(container);
+    setModalVisible(true);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header subtitle="Offline-First Personal Scheduler" />
+      <Header title="SyncFlow" subtitle="Android Batch Scheduler" />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Quick Stats Banner */}
-        <View style={styles.statsGrid}>
-          <Card style={styles.statCard}>
-            <Clock size={20} color={colors.primary} />
-            <Text style={[styles.statNum, { color: colors.textPrimary }]}>{scheduledCount}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Scheduled</Text>
-          </Card>
-
-          <Card style={styles.statCard}>
-            <CheckCircle2 size={20} color={colors.success} />
-            <Text style={[styles.statNum, { color: colors.textPrimary }]}>{publishedCount}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Published</Text>
-          </Card>
-
-          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/missed-failed')} style={{ flex: 1 }}>
-            <Card style={[styles.statCard, failedCount > 0 && { borderColor: colors.danger }]}>
-              <AlertCircle size={20} color={failedCount > 0 ? colors.danger : colors.textMuted} />
-              <Text style={[styles.statNum, { color: failedCount > 0 ? colors.danger : colors.textPrimary }]}>
-                {failedCount}
-              </Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Needs Action</Text>
-            </Card>
-          </TouchableOpacity>
-        </View>
-
-        {/* Failed Posts Callout Banner if any */}
-        {failedCount > 0 && (
-          <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/missed-failed')}>
-            <Card style={[styles.failedBanner, { backgroundColor: colors.dangerContainer, borderColor: colors.danger }]}>
-              <View style={styles.bannerRow}>
-                <AlertCircle size={22} color={colors.danger} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.bannerTitle, { color: colors.danger }]}>
-                    {failedCount} Missed / Failed Posts
-                  </Text>
-                  <Text style={[styles.bannerSub, { color: colors.textPrimary }]}>
-                    Tap to review failure reasons and batch retry.
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          </TouchableOpacity>
-        )}
-
-        {/* System Health / Status Card */}
-        <Card style={styles.healthCard}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>System Health & Storage</Text>
-          <View style={styles.healthGrid}>
-            <View style={styles.healthItem}>
-              <Wifi size={16} color={networkStatus === 'online' ? colors.success : colors.danger} />
-              <Text style={[styles.healthText, { color: colors.textSecondary }]}>
-                Net: <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{networkStatus}</Text>
-              </Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {/* Top Overview Banner */}
+        <View style={[styles.heroBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.heroLeft}>
+            <View style={[styles.heroIconBox, { backgroundColor: colors.primaryContainer }]}>
+              <Layers size={22} color={colors.primary} />
             </View>
-
-            <View style={styles.healthItem}>
-              <Activity size={16} color={colors.primary} />
-              <Text style={[styles.healthText, { color: colors.textSecondary }]}>
-                Sync: <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{engineState}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
+                Scheduler Containers
               </Text>
-            </View>
-
-            <View style={styles.healthItem}>
-              <Database size={16} color={colors.secondary} />
-              <Text style={[styles.healthText, { color: colors.textSecondary }]}>
-                Storage: <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>Local SQLite</Text>
+              <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
+                {campaigns.length} Active Containers • {posts.length} Total Posts
               </Text>
+
+              {/* Interactive Tappable Meta Server Scheduled Verification Badge */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setScheduledPopupVisible(true)}
+                style={[styles.metaBadge, { backgroundColor: colors.primaryContainer }]}
+              >
+                <Globe size={11} color={colors.primary} />
+                <Text style={[styles.metaBadgeText, { color: colors.primary }]}>
+                  Meta Server Scheduled:{' '}
+                  {metaServerScheduledCount !== null
+                    ? `${metaServerScheduledCount} Posts`
+                    : 'Verifying...'}
+                </Text>
+                <ChevronRight size={10} color={colors.primary} />
+              </TouchableOpacity>
             </View>
           </View>
-        </Card>
 
-        {/* Recent Campaigns Carousel */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Active Campaigns</Text>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/campaigns')}>
-            <Text style={[styles.seeAll, { color: colors.primary }]}>View All ({campaigns.length})</Text>
+          {/* Reduced Add Container button to Add */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleOpenAdd}
+            style={[styles.bannerAddBtn, { backgroundColor: colors.primary }]}
+          >
+            <Plus size={16} color="#FFFFFF" />
+            <Text style={styles.bannerAddBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselContainer}>
-          {campaigns.map((c) => {
-            const count = posts.filter((p) => p.campaignId === c.id).length;
-            return (
-              <TouchableOpacity
-                key={c.id}
-                activeOpacity={0.85}
-                onPress={() => router.push(`/campaign/${c.id}`)}
-              >
-                <Card style={[styles.campaignCard, { borderColor: c.color }]}>
-                  <View style={[styles.categoryPill, { backgroundColor: `${c.color}25` }]}>
-                    <Text style={[styles.categoryText, { color: c.color }]}>{c.category}</Text>
-                  </View>
-                  <Text style={[styles.campTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-                    {c.title}
-                  </Text>
-                  <Text style={[styles.campCount, { color: colors.textSecondary }]}>{count} Posts</Text>
-                  <View style={styles.distributeRow}>
-                    <Sparkles size={14} color={colors.primary} />
-                    <Text style={[styles.distributeText, { color: colors.primary }]}>Magic Distribute</Text>
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Today's Schedule */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Today's Schedule</Text>
-          <Text style={[styles.subtitleText, { color: colors.textSecondary }]}>
-            {todayPosts.length} posts scheduled today
-          </Text>
-        </View>
-
-        {todayPosts.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <Calendar size={28} color={colors.textMuted} />
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No posts scheduled for today</Text>
-            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-              Use the + button or Magic Distribute to populate your queue.
+        {/* Containers Grid (2 Columns) or Empty State */}
+        {campaigns.length > 0 ? (
+          <View style={styles.containersList}>
+            <Text style={[styles.sectionHeading, { color: colors.textSecondary }]}>
+              YOUR ACTIVE CONTAINERS ({campaigns.length})
             </Text>
-          </Card>
+
+            <View style={styles.cardsGrid}>
+              {campaigns.map((item) => (
+                <ContainerCard
+                  key={item.id}
+                  container={item}
+                  posts={posts}
+                  onTogglePause={(id) => toggleCampaignPause(id)}
+                  onEdit={handleEditContainer}
+                  onDelete={(id) => deleteCampaign(id)}
+                />
+              ))}
+            </View>
+          </View>
         ) : (
-          todayPosts.map((post) => (
-            <TouchableOpacity key={post.id} activeOpacity={0.85} onPress={() => router.push(`/post-detail/${post.id}`)}>
-              <Card style={styles.postCard}>
-                <View style={styles.postTop}>
-                  <View style={styles.platRow}>
-                    {post.platforms.map((plat) => (
-                      <PlatformBadge key={plat} platform={plat} showLabel={false} />
-                    ))}
-                  </View>
-                  <Badge status={post.status} />
-                </View>
+          /* Empty State when no containers created */
+          <View style={[styles.emptyBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: colors.primaryContainer }]}>
+              <FolderPlus size={36} color={colors.primary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              No Containers Created Yet
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+              A Container is a special batch scheduler where you can define platform rules, smart intervals, and add Facebook-style multi-image posts.
+            </Text>
 
-                <Text style={[styles.postCaption, { color: colors.textPrimary }]} numberOfLines={2}>
-                  {post.caption}
-                </Text>
-
-                <Text style={[styles.postTime, { color: colors.primary }]}>
-                  {format(new Date(post.scheduledAt), 'h:mm a')}
-                </Text>
-              </Card>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handleOpenAdd}
+              style={[styles.emptyCreateBtn, { backgroundColor: colors.primary }]}
+            >
+              <Plus size={18} color="#FFFFFF" />
+              <Text style={styles.emptyCreateBtnText}>Create First Container</Text>
             </TouchableOpacity>
-          ))
+          </View>
         )}
-
-        {/* Upcoming Queue Overview */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Upcoming Posts</Text>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/queue')}>
-            <Text style={[styles.seeAll, { color: colors.primary }]}>Full Queue</Text>
-          </TouchableOpacity>
-        </View>
-
-        {upcomingPosts.map((post) => (
-          <TouchableOpacity key={post.id} activeOpacity={0.85} onPress={() => router.push(`/post-detail/${post.id}`)}>
-            <Card style={styles.postCard}>
-              <View style={styles.postTop}>
-                <Text style={[styles.postTime, { color: colors.textSecondary }]}>
-                  {format(new Date(post.scheduledAt), 'MMM dd, h:mm a')}
-                </Text>
-                <Badge status={post.status} />
-              </View>
-
-              <Text style={[styles.postCaption, { color: colors.textPrimary }]} numberOfLines={2}>
-                {post.caption}
-              </Text>
-            </Card>
-          </TouchableOpacity>
-        ))}
-
-        <View style={{ height: 100 }} />
       </ScrollView>
 
-      <FAB />
+      {/* Add Container Modal */}
+      <AddContainerModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        existingContainer={editingContainer}
+      />
+
+      {/* POPUP LIST MODAL FOR SCHEDULED POSTS */}
+      <AnimatedSheet
+        visible={scheduledPopupVisible}
+        onClose={() => setScheduledPopupVisible(false)}
+        title="Meta Server Scheduled Posts"
+        subtitle={`Showing ${scheduledPosts.length} posts uploaded & queued for auto-publishing`}
+      >
+        <ScrollView style={styles.popupListContent} showsVerticalScrollIndicator={false}>
+          {scheduledPosts.length > 0 ? (
+            scheduledPosts.map((post, idx) => {
+              const parentCampaign = campaigns.find((c) => c.id === post.campaignId);
+              const isPastOrPublished =
+                post.status === 'published' || Date.parse(post.scheduledAt) <= Date.now();
+              const formattedDate = new Date(post.scheduledAt).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              return (
+                <View
+                  key={post.id}
+                  style={[
+                    styles.scheduledItemRow,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+                  ]}
+                >
+                  <View style={[styles.itemNumBadge, { backgroundColor: colors.primaryContainer }]}>
+                    <Text style={[styles.itemNumText, { color: colors.primary }]}>#{idx + 1}</Text>
+                  </View>
+
+                  <View style={styles.itemTextCol}>
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      style={[styles.itemCaptionText, { color: colors.textPrimary }]}
+                    >
+                      {post.caption && post.caption.trim() !== ''
+                        ? post.caption
+                        : 'Media post without caption...'}
+                    </Text>
+
+                    <Text style={[styles.itemMetaSub, { color: colors.textSecondary }]}>
+                      📁 {parentCampaign?.title || 'Batch Container'}
+                    </Text>
+                  </View>
+
+                  {isPastOrPublished ? (
+                    <View style={[styles.itemTimePill, { backgroundColor: '#10B98118', borderColor: '#10B981', borderWidth: 1 }]}>
+                      <CheckCircle2 size={11} color="#10B981" />
+                      <Text style={[styles.itemTimeText, { color: '#10B981', fontWeight: '800' }]}>
+                        Published ✔
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.itemTimePill, { backgroundColor: colors.primaryContainer }]}>
+                      <Clock size={10} color={colors.primary} />
+                      <Text style={[styles.itemTimeText, { color: colors.primary }]}>
+                        {formattedDate}
+                      </Text>
+                      <Globe size={10} color={colors.success} />
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          ) : (
+            <View style={styles.emptyPopupBox}>
+              <Globe size={32} color={colors.textSecondary} />
+              <Text style={[styles.emptyPopupText, { color: colors.textSecondary }]}>
+                No scheduled posts found. Create a container to schedule posts directly on Meta servers!
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      </AnimatedSheet>
     </View>
   );
 }
@@ -216,159 +282,176 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
+    paddingBottom: 140,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  statCard: {
-    flex: 1,
-    padding: 12,
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  statNum: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  failedBanner: {
-    marginBottom: 16,
-    padding: 14,
-  },
-  bannerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  bannerTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  bannerSub: {
-    fontSize: 11,
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  healthCard: {
-    marginBottom: 20,
-    padding: 14,
-  },
-  healthGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  healthItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  healthText: {
-    fontSize: 11,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  seeAll: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  subtitleText: {
-    fontSize: 12,
-  },
-  carouselContainer: {
-    gap: 12,
-    paddingBottom: 8,
-    marginBottom: 16,
-  },
-  campaignCard: {
-    width: 170,
-    padding: 14,
+  heroBanner: {
+    padding: 16,
     borderRadius: 20,
-    borderWidth: 2,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  categoryPill: {
-    alignSelf: 'flex-start',
+  heroLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  heroIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  heroSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
-    marginBottom: 8,
+    marginTop: 6,
+    alignSelf: 'flex-start',
   },
-  categoryText: {
+  metaBadgeText: {
     fontSize: 10,
-    fontWeight: '800',
-  },
-  campTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  campCount: {
-    fontSize: 11,
-    marginBottom: 10,
-  },
-  distributeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  distributeText: {
-    fontSize: 11,
     fontWeight: '700',
   },
-  emptyCard: {
+  bannerAddBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  bannerAddBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+  containersList: {
+    marginBottom: 20,
+  },
+  cardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  emptyBox: {
     padding: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 8,
-  },
-  emptySub: {
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  postCard: {
-    marginBottom: 10,
-    padding: 14,
-  },
-  postTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    fontSize: 18,
+    fontWeight: '800',
     marginBottom: 8,
   },
-  platRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  postCaption: {
+  emptySubtitle: {
     fontSize: 13,
-    fontWeight: '600',
+    textAlign: 'center',
     lineHeight: 18,
+    marginBottom: 20,
   },
-  postTime: {
-    fontSize: 12,
+  emptyCreateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  emptyCreateBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  popupListContent: {
+    maxHeight: 400,
+    marginTop: 10,
+  },
+  scheduledItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 10,
+  },
+  itemNumBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemNumText: {
+    fontSize: 11,
     fontWeight: '800',
-    marginTop: 6,
+  },
+  itemTextCol: {
+    flex: 1,
+  },
+  itemCaptionText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  itemMetaSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  itemTimePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  itemTimeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyPopupBox: {
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  emptyPopupText: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Image 
 import { useThemeStore } from '../src/stores/useThemeStore';
 import { useCampaignStore } from '../src/stores/useCampaignStore';
 import { SocialPlatform } from '../src/db/types';
-import { X, ImagePlus, Calendar, Clock, Sparkles, Check, Facebook, Instagram, Video, Tag } from 'lucide-react-native';
+import { X, ImagePlus, Calendar, Clock, Sparkles, Check, Facebook, Instagram, Video, Tag, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -26,6 +26,23 @@ export default function CreatePostScreen() {
   const tomorrow = new Date(Date.now() + 86400000);
   const [scheduledDate, setScheduledDate] = useState<string>(tomorrow.toISOString().split('T')[0]);
   const [scheduledTime, setScheduledTime] = useState<string>('14:30');
+
+  const checkScheduledTimeValid = (): { valid: boolean; error?: string } => {
+    const dateObj = new Date(`${scheduledDate}T${scheduledTime}:00`);
+    if (isNaN(dateObj.getTime())) {
+      return { valid: false, error: 'Invalid Date/Time format. Use YYYY-MM-DD and HH:MM' };
+    }
+    const diffMinutes = (dateObj.getTime() - Date.now()) / 60000;
+    if (diffMinutes < 10) {
+      return {
+        valid: false,
+        error: diffMinutes <= 0 ? '⏰ Time is in the past!' : '⏰ Time must be at least 10 minutes in the future.',
+      };
+    }
+    return { valid: true };
+  };
+
+  const timeValidation = checkScheduledTimeValid();
 
   const togglePlatform = (p: SocialPlatform) => {
     if (selectedPlatforms.includes(p)) {
@@ -66,12 +83,21 @@ export default function CreatePostScreen() {
     }
   };
 
-  const handleSavePost = async (isDraft: boolean) => {
-    if (!caption.trim()) return;
+  const handleSafeBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
 
-    const [hours, minutes] = scheduledTime.split(':').map(Number);
-    const dateObj = new Date(scheduledDate);
-    dateObj.setHours(hours, minutes, 0, 0);
+  const handleSavePost = async (isDraft: boolean = false) => {
+    if (!caption.trim() && attachedImages.length === 0) {
+      alert('Please enter a caption or attach an image.');
+      return;
+    }
+
+    const dateObj = new Date(`${scheduledDate}T${scheduledTime}:00`);
 
     await addPost({
       campaignId: selectedCampaignId,
@@ -86,14 +112,14 @@ export default function CreatePostScreen() {
       tags,
     });
 
-    router.back();
+    handleSafeBack();
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header Bar */}
       <View style={[styles.topHeader, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => router.back()} style={styles.closeBtn}>
+        <TouchableOpacity activeOpacity={0.8} onPress={handleSafeBack} style={styles.closeBtn}>
           <X size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Create Post</Text>
@@ -221,28 +247,53 @@ export default function CreatePostScreen() {
         {/* Date & Time Selector */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Schedule Time</Text>
         <View style={styles.dateTimeRow}>
-          <View style={[styles.dateTimeInput, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Calendar size={18} color={colors.primary} />
+          <View
+            style={[
+              styles.dateTimeInput,
+              {
+                backgroundColor: !timeValidation.valid ? '#FEF2F2' : colors.surface,
+                borderColor: !timeValidation.valid ? '#EF4444' : colors.border,
+                borderWidth: !timeValidation.valid ? 2 : 1,
+              },
+            ]}
+          >
+            <Calendar size={18} color={!timeValidation.valid ? '#EF4444' : colors.primary} />
             <TextInput
               placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.textMuted}
               value={scheduledDate}
               onChangeText={setScheduledDate}
-              style={[styles.dateText, { color: colors.textPrimary }]}
+              style={[styles.dateText, { color: !timeValidation.valid ? '#EF4444' : colors.textPrimary }]}
             />
           </View>
 
-          <View style={[styles.dateTimeInput, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Clock size={18} color={colors.primary} />
+          <View
+            style={[
+              styles.dateTimeInput,
+              {
+                backgroundColor: !timeValidation.valid ? '#FEF2F2' : colors.surface,
+                borderColor: !timeValidation.valid ? '#EF4444' : colors.border,
+                borderWidth: !timeValidation.valid ? 2 : 1,
+              },
+            ]}
+          >
+            <Clock size={18} color={!timeValidation.valid ? '#EF4444' : colors.primary} />
             <TextInput
               placeholder="HH:MM"
               placeholderTextColor={colors.textMuted}
               value={scheduledTime}
               onChangeText={setScheduledTime}
-              style={[styles.dateText, { color: colors.textPrimary }]}
+              style={[styles.dateText, { color: !timeValidation.valid ? '#EF4444' : colors.textPrimary }]}
             />
           </View>
         </View>
+
+        {!timeValidation.valid && (
+          <View style={styles.errorAlertBox}>
+            <AlertCircle size={14} color="#EF4444" />
+            <Text style={styles.errorAlertText}>{timeValidation.error}</Text>
+          </View>
+        )}
 
         {/* Tags */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Tags</Text>
@@ -285,11 +336,22 @@ export default function CreatePostScreen() {
         {/* Action Button */}
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => handleSavePost(false)}
-          style={[styles.scheduleBtn, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            if (!timeValidation.valid) {
+              alert(`⚠️ Cannot Schedule Post:\n\n${timeValidation.error}`);
+              return;
+            }
+            handleSavePost(false);
+          }}
+          style={[
+            styles.scheduleBtn,
+            { backgroundColor: timeValidation.valid ? colors.primary : '#EF4444' },
+          ]}
         >
-          <Sparkles size={18} color="#FFFFFF" />
-          <Text style={styles.scheduleBtnText}>Schedule Post</Text>
+          {timeValidation.valid ? <Sparkles size={18} color="#FFFFFF" /> : <AlertCircle size={18} color="#FFFFFF" />}
+          <Text style={styles.scheduleBtnText}>
+            {timeValidation.valid ? 'Schedule Post' : 'Fix Time (Min 10 mins in future)'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -426,6 +488,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+  errorAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorAlertText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#EF4444',
+    flex: 1,
+  },
   dateTimeInput: {
     flex: 1,
     flexDirection: 'row',
@@ -440,6 +520,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    // @ts-ignore
+    outlineStyle: 'none',
+    outlineWidth: 0,
   },
   tagInputRow: {
     flexDirection: 'row',

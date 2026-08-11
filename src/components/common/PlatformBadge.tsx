@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SocialPlatform } from '../../db/types';
 import { platformColors } from '../../theme/colors';
-import { Facebook, Instagram, Video } from 'lucide-react-native';
+import { Facebook, Instagram, Video, Twitter } from 'lucide-react-native';
 
 interface PlatformBadgeProps {
   platform: SocialPlatform;
@@ -16,6 +16,8 @@ export const PlatformBadge: React.FC<PlatformBadgeProps> = ({ platform, showLabe
         return <Facebook size={12} color="#FFFFFF" />;
       case 'instagram':
         return <Instagram size={12} color="#FFFFFF" />;
+      case 'x':
+        return <Twitter size={12} color="#FFFFFF" />;
       case 'tiktok':
         return <Video size={12} color="#FFFFFF" />;
     }
@@ -27,6 +29,8 @@ export const PlatformBadge: React.FC<PlatformBadgeProps> = ({ platform, showLabe
         return platformColors.facebook;
       case 'instagram':
         return platformColors.instagram;
+      case 'x':
+        return platformColors.x;
       case 'tiktok':
         return '#000000';
     }

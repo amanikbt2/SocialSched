@@ -6,6 +6,7 @@ import { useThemeStore } from '../src/stores/useThemeStore';
 import { useCampaignStore } from '../src/stores/useCampaignStore';
 import { useQueueStore } from '../src/stores/useQueueStore';
 import { useMediaStore } from '../src/stores/useMediaStore';
+import { useSocialAccountsStore } from '../src/stores/useSocialAccountsStore';
 import { startQueueEngine } from '../src/services/queueEngine';
 import { View, StyleSheet } from 'react-native';
 
@@ -14,6 +15,7 @@ export default function RootLayout() {
   const loadCampaignData = useCampaignStore((state) => state.loadData);
   const loadQueueSettings = useQueueStore((state) => state.loadQueueSettings);
   const loadMedia = useMediaStore((state) => state.loadMedia);
+  const loadSavedAccounts = useSocialAccountsStore((state) => state.loadSavedAccounts);
 
   useEffect(() => {
     async function init() {
@@ -21,6 +23,7 @@ export default function RootLayout() {
       await loadQueueSettings();
       await loadCampaignData();
       await loadMedia();
+      await loadSavedAccounts();
       startQueueEngine();
     }
     init();

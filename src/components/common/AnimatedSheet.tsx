@@ -8,6 +8,7 @@ interface AnimatedSheetProps {
   onClose: () => void;
   title: string;
   subtitle?: string;
+  fullScreen?: boolean;
   children: React.ReactNode;
 }
 
@@ -16,6 +17,7 @@ export const AnimatedSheet: React.FC<AnimatedSheetProps> = ({
   onClose,
   title,
   subtitle,
+  fullScreen = false,
   children,
 }) => {
   const colors = useThemeStore((state) => state.colors);
@@ -25,10 +27,16 @@ export const AnimatedSheet: React.FC<AnimatedSheetProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop} />
+        <View style={[styles.backdrop, fullScreen ? { flex: 0 } : null]} />
       </TouchableWithoutFeedback>
 
-      <View style={[styles.sheetContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.sheetContainer,
+          fullScreen ? styles.fullScreenContainer : null,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
         <View style={styles.handleBar} />
         
         <View style={styles.header}>
@@ -63,6 +71,14 @@ const styles = StyleSheet.create({
     paddingBottom: 34,
     maxHeight: '90%',
   },
+  fullScreenContainer: {
+    flex: 1,
+    height: '100%',
+    maxHeight: '100%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: 24,
+  },
   handleBar: {
     width: 36,
     height: 4,
@@ -94,6 +110,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    paddingBottom: 20,
+    flex: 1,
+    minHeight: 0,
   },
 });

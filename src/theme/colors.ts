@@ -81,6 +81,7 @@ export const lightColors: ThemeColors = {
 export const platformColors = {
   facebook: '#1877F2',
   instagram: '#E4405F',
+  x: '#0F1419',
   tiktok: '#00F2FE',
   tiktokDark: '#FF0050',
 };

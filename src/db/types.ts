@@ -1,5 +1,5 @@
 export type PostStatus = 'draft' | 'scheduled' | 'waiting' | 'uploading' | 'published' | 'failed' | 'paused' | 'missed';
-export type SocialPlatform = 'facebook' | 'instagram' | 'tiktok';
+export type SocialPlatform = 'facebook' | 'instagram' | 'x' | 'tiktok';
 
 export interface Campaign {
   id: string;
@@ -8,8 +8,29 @@ export interface Campaign {
   category: string;
   color: string;
   icon?: string;
+  thumbnailUri?: string;
+  platforms: SocialPlatform[];
+  smartSchedulingEnabled: boolean;
+  intervalMinutes: number; // e.g. 60 for 1h
+  startDate: string;
+  startTime: string;
+  hasEndDateLimit?: boolean;
+  endDate?: string;
+  isPaused: boolean;
   createdAt: string;
+
+  // Loop Container specific properties
+  isLoopContainer?: boolean;
+  mediaPerPost?: number;
+  loopDescriptions?: string[];
+  loopMediaPool?: string[];
+  usedMediaUris?: string[];
+  currentLoopRound?: number;
+  isLoopCompleted?: boolean;
 }
+
+// Alias Container to Campaign for exact domain alignment
+export type Container = Campaign;
 
 export interface Post {
   id: string;
@@ -24,6 +45,8 @@ export interface Post {
   failureReason: string | null;
   uploadProgress: number;
   tags: string[];
+  hashtags: string[];
+  mentions: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -35,7 +58,7 @@ export interface MediaItem {
   name: string;
   folder: string;
   isFavorite: boolean;
-  size: number; // in bytes
+  size: number;
   createdAt: string;
 }
 
@@ -51,24 +74,13 @@ export interface QueueItem {
 
 export interface MagicDistributeConfig {
   campaignId: string;
-  startDate: string; // ISO string
-  startTime: string; // "09:00"
-  intervalMinutes: number; // e.g. 15, 30, 45, 60, 120, 1440
-  allowRandomVariance: boolean; // e.g. 45-70 mins
+  startDate: string;
+  startTime: string;
+  intervalMinutes: number;
+  allowRandomVariance: boolean;
   varianceMin: number;
   varianceMax: number;
-  blackoutStart: string; // e.g. "00:00"
-  blackoutEnd: string;   // e.g. "06:00"
-  selectedDays: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
-  skipWeekends: boolean;
-  maxPostsPerDay: number;
-}
-
-export interface AppSettings {
-  theme: 'dark' | 'light' | 'system';
-  simulatedNetwork: 'online' | 'offline' | 'flaky';
-  autoRetryFailed: boolean;
-  maxRetries: number;
-  notificationsEnabled: boolean;
-  backgroundSyncInterval: number; // in minutes
+  blackoutStart: string;
+  blackoutEnd: string;
+  selectedDays: number[];
 }

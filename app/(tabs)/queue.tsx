@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { QueueProgressCard } from '../../src/components/queue/QueueProgressCard';
 import { FAB } from '../../src/components/common/FAB';
@@ -12,10 +12,17 @@ import { Play, Pause, RefreshCw, Layers, CheckCircle2 } from 'lucide-react-nativ
 
 export default function QueueScreen() {
   const colors = useThemeStore((state) => state.colors);
-  const { posts, updatePost } = useCampaignStore();
+  const { posts, updatePost, loadData } = useCampaignStore();
   const { engineState, setEngineState, activePostId } = useQueueStore();
 
   const [activeTab, setActiveTab] = useState<PostStatus | 'all'>('all');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   const queuePosts = posts.filter((p) => {
     if (activeTab === 'all') {
@@ -119,7 +126,18 @@ export default function QueueScreen() {
       </ScrollView>
 
       {/* Queue Items List */}
-      <ScrollView contentContainerStyle={styles.listContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {queuePosts.length === 0 ? (
           <Card style={styles.emptyCard}>
             <CheckCircle2 size={32} color={colors.success} />

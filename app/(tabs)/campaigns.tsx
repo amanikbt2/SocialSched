@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, RefreshControl } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { Card } from '../../src/components/common/Card';
 import { FAB } from '../../src/components/common/FAB';
@@ -11,11 +11,18 @@ import { useRouter } from 'expo-router';
 
 export default function CampaignsScreen() {
   const colors = useThemeStore((state) => state.colors);
-  const { campaigns, posts, addCampaign } = useCampaignStore();
+  const { campaigns, posts, addCampaign, loadData } = useCampaignStore();
   const router = useRouter();
 
   const [search, setSearch] = useState('');
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   // New Campaign Form
   const [newTitle, setNewTitle] = useState('');
@@ -66,7 +73,18 @@ export default function CampaignsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollList}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {filteredCampaigns.map((camp) => {
           const campaignPosts = posts.filter((p) => p.campaignId === camp.id);
           const scheduledCount = campaignPosts.filter((p) => p.status === 'scheduled' || p.status === 'waiting').length;
