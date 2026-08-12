@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Image, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Image, ScrollView, TextInput, Alert } from 'react-native';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCampaignStore } from '../../stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
@@ -45,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ title = 'SyncFlow', subtitle, sh
   const currentFbAccount = accounts.find((a) => a.platform === 'facebook' && a.isConnected);
 
   const handleBackup = () => {
-    alert('JSON Backup file generated and saved successfully!');
+    Alert.alert('Backup Created', 'JSON Backup file generated and saved successfully!');
   };
 
   const handleOpenLinkModal = (platform: SocialPlatform) => {
@@ -96,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({ title = 'SyncFlow', subtitle, sh
         avatarUrl,
       });
 
-      alert(`✅ Verified Live Facebook Access Token!\n\nConnected Page: "${pageName}"\nPage ID: ${pageId}`);
+      Alert.alert('Verified Facebook Token', `Connected Page: "${pageName}"\nPage ID: ${pageId}`);
       setLinkingPlatform(null);
     } else {
       const finalUser = usernameInput.startsWith('@') ? usernameInput : `@${usernameInput || 'user'}`;

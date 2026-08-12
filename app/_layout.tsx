@@ -8,7 +8,7 @@ import { useQueueStore } from '../src/stores/useQueueStore';
 import { useMediaStore } from '../src/stores/useMediaStore';
 import { useSocialAccountsStore } from '../src/stores/useSocialAccountsStore';
 import { startQueueEngine } from '../src/services/queueEngine';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 
 export default function RootLayout() {
   const { isDark, colors, loadTheme } = useThemeStore();
@@ -18,6 +18,29 @@ export default function RootLayout() {
   const loadSavedAccounts = useSocialAccountsStore((state) => state.loadSavedAccounts);
 
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      const doc = (globalThis as any).document;
+      if (doc) {
+        const styleId = 'syncflow-web-viewport-fix';
+        if (!doc.getElementById(styleId)) {
+          const styleEl = doc.createElement('style');
+          styleEl.id = styleId;
+          styleEl.textContent = `
+            html, body, #root {
+              height: 100% !important;
+              width: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: hidden !important;
+              display: flex !important;
+              flex-direction: column !important;
+            }
+          `;
+          doc.head.appendChild(styleEl);
+        }
+      }
+    }
+
     async function init() {
       await loadTheme();
       await loadQueueSettings();

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Campaign, Post, PostStatus, SocialPlatform } from '../db/types';
 import { getDatabase } from '../db/database';
 import { generateLoopPosts } from '../services/loopContainerEngine';
+import { saveMultipleMediaToHiddenFolder } from '../utils/localMediaStorage';
 
 interface CampaignState {
   campaigns: Campaign[];
@@ -19,6 +20,7 @@ interface CampaignState {
   toggleCampaignPause: (id: string) => Promise<void>;
   
   addPost: (post: any) => Promise<Post>;
+  addPostsBatch: (posts: Post[]) => Promise<void>;
   updatePost: (id: string, updates: Partial<Post>) => Promise<void>;
   deletePost: (id: string) => Promise<void>;
   duplicatePost: (id: string) => Promise<Post | null>;
@@ -32,6 +34,7 @@ interface CampaignState {
   checkMissedPosts: () => Promise<void>;
   triggerNextLoop: (containerId: string) => Promise<void>;
   addMediaToLoopPool: (containerId: string, newUris: string[]) => Promise<void>;
+  clearScheduledPostsForCampaign: (campaignId: string) => Promise<void>;
 }
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
@@ -46,8 +49,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     set({ isLoading: true });
     try {
       const db = await getDatabase();
-      const rawCampaigns = await db.getAllAsync<any>('SELECT * FROM campaigns ORDER BY createdAt DESC;');
-      const rawPosts = await db.getAllAsync<any>('SELECT * FROM posts ORDER BY datetime(scheduledAt) ASC;');
+      const rawCampaigns = (await db.getAllAsync('SELECT * FROM campaigns ORDER BY createdAt DESC;')) as any[];
+      const rawPosts = (await db.getAllAsync('SELECT * FROM posts ORDER BY datetime(scheduledAt) ASC;')) as any[];
 
       const campaigns: Campaign[] = rawCampaigns.map((c) => ({
         id: c.id,
@@ -64,21 +67,27 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         startTime: c.startTime || '09:00',
         hasEndDateLimit: Boolean(c.hasEndDateLimit),
         endDate: c.endDate,
+        endTime: c.endTime || '23:59',
         isPaused: Boolean(c.isPaused),
         createdAt: c.createdAt || new Date().toISOString(),
         isLoopContainer: Boolean(c.isLoopContainer),
+        autoNextRound: c.autoNextRound !== undefined ? Boolean(c.autoNextRound) : true,
         mediaPerPost: c.mediaPerPost || 1,
         loopDescriptions: c.loopDescriptions ? (typeof c.loopDescriptions === 'string' ? JSON.parse(c.loopDescriptions) : c.loopDescriptions) : [],
         loopMediaPool: c.loopMediaPool ? (typeof c.loopMediaPool === 'string' ? JSON.parse(c.loopMediaPool) : c.loopMediaPool) : [],
         usedMediaUris: c.usedMediaUris ? (typeof c.usedMediaUris === 'string' ? JSON.parse(c.usedMediaUris) : c.usedMediaUris) : [],
         currentLoopRound: c.currentLoopRound || 1,
         isLoopCompleted: Boolean(c.isLoopCompleted),
+        skipTimeRanges: c.skipTimeRanges ? (typeof c.skipTimeRanges === 'string' ? JSON.parse(c.skipTimeRanges) : c.skipTimeRanges) : [],
+        enableFirstComment: Boolean(c.enableFirstComment),
+        firstComment: c.firstComment || '',
       }));
 
       const posts: Post[] = rawPosts.map((p) => ({
         id: p.id,
         campaignId: p.campaignId,
         caption: p.caption,
+        firstComment: p.firstComment || '',
         images: JSON.parse(p.images || '[]'),
         videos: JSON.parse(p.videos || '[]'),
         platforms: JSON.parse(p.platforms || '[]') as SocialPlatform[],
@@ -94,7 +103,19 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         updatedAt: p.updatedAt,
       }));
 
-      set({ campaigns, posts, isLoading: false });
+      // Exclude legacy mock seed campaigns so ONLY user-created containers exist
+      const userCampaigns = campaigns.filter((c) => !['camp-1', 'camp-2', 'camp-3', 'camp-4', 'camp-5'].includes(c.id));
+      const userPosts = posts.filter((p) => !['camp-1', 'camp-2', 'camp-3', 'camp-4', 'camp-5'].includes(p.campaignId || ''));
+
+      // Clean up legacy seed records from DB asynchronously
+      for (const defaultId of ['camp-1', 'camp-2', 'camp-3', 'camp-4', 'camp-5']) {
+        try {
+          await db.runAsync('DELETE FROM campaigns WHERE id = ?;', [defaultId]);
+          await db.runAsync('DELETE FROM posts WHERE campaignId = ?;', [defaultId]);
+        } catch (e) {}
+      }
+
+      set({ campaigns: userCampaigns, posts: userPosts, isLoading: false });
       await get().checkMissedPosts();
     } catch (error) {
       console.warn('Loading campaign data fallback:', error);
@@ -127,8 +148,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `INSERT INTO campaigns (id, title, description, category, color, icon, thumbnailUri, platforms, smartSchedulingEnabled, intervalMinutes, startDate, startTime, hasEndDateLimit, endDate, isPaused, createdAt, isLoopContainer, mediaPerPost, loopDescriptions, loopMediaPool, usedMediaUris, currentLoopRound, isLoopCompleted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO campaigns (id, title, description, category, color, icon, thumbnailUri, platforms, smartSchedulingEnabled, intervalMinutes, startDate, startTime, hasEndDateLimit, endDate, endTime, isPaused, createdAt, isLoopContainer, mediaPerPost, loopDescriptions, loopMediaPool, usedMediaUris, currentLoopRound, isLoopCompleted, enableFirstComment, firstComment)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           newCampaign.id,
           newCampaign.title,
@@ -144,6 +165,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           newCampaign.startTime,
           newCampaign.hasEndDateLimit ? 1 : 0,
           newCampaign.endDate || null,
+          newCampaign.endTime || '23:59',
           newCampaign.isPaused ? 1 : 0,
           newCampaign.createdAt,
           newCampaign.isLoopContainer ? 1 : 0,
@@ -153,6 +175,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           JSON.stringify(newCampaign.usedMediaUris || []),
           newCampaign.currentLoopRound || 1,
           newCampaign.isLoopCompleted ? 1 : 0,
+          newCampaign.enableFirstComment ? 1 : 0,
+          newCampaign.firstComment || null,
         ]
       );
     } catch (e) {
@@ -182,7 +206,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `UPDATE campaigns SET title = ?, description = ?, category = ?, color = ?, icon = ?, thumbnailUri = ?, platforms = ?, smartSchedulingEnabled = ?, intervalMinutes = ?, startDate = ?, startTime = ?, hasEndDateLimit = ?, endDate = ?, isPaused = ?, isLoopContainer = ?, mediaPerPost = ?, loopDescriptions = ?, loopMediaPool = ?, usedMediaUris = ?, currentLoopRound = ?, isLoopCompleted = ? WHERE id = ?;`,
+        `UPDATE campaigns SET title = ?, description = ?, category = ?, color = ?, icon = ?, thumbnailUri = ?, platforms = ?, smartSchedulingEnabled = ?, intervalMinutes = ?, startDate = ?, startTime = ?, hasEndDateLimit = ?, endDate = ?, endTime = ?, isPaused = ?, isLoopContainer = ?, mediaPerPost = ?, loopDescriptions = ?, loopMediaPool = ?, usedMediaUris = ?, currentLoopRound = ?, isLoopCompleted = ?, enableFirstComment = ?, firstComment = ? WHERE id = ?;`,
         [
           updated.title,
           updated.description,
@@ -197,6 +221,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           updated.startTime,
           updated.hasEndDateLimit ? 1 : 0,
           updated.endDate || null,
+          updated.endTime || '23:59',
           updated.isPaused ? 1 : 0,
           updated.isLoopContainer ? 1 : 0,
           updated.mediaPerPost || 1,
@@ -205,6 +230,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           JSON.stringify(updated.usedMediaUris || []),
           updated.currentLoopRound || 1,
           updated.isLoopCompleted ? 1 : 0,
+          updated.enableFirstComment ? 1 : 0,
+          updated.firstComment || null,
           targetId,
         ]
       );
@@ -244,6 +271,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       id: postData.id || `post-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       campaignId: postData.campaignId || null,
       caption: postData.caption || '',
+      firstComment: postData.firstComment || '',
       images: postData.images || [],
       videos: postData.videos || [],
       platforms: postData.platforms || ['facebook', 'instagram'],
@@ -262,12 +290,13 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `INSERT INTO posts (id, campaignId, caption, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO posts (id, campaignId, caption, firstComment, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           newPost.id,
           newPost.campaignId,
           newPost.caption,
+          newPost.firstComment || null,
           JSON.stringify(newPost.images),
           JSON.stringify(newPost.videos),
           JSON.stringify(newPost.platforms),
@@ -297,10 +326,11 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `UPDATE posts SET campaignId = ?, caption = ?, images = ?, videos = ?, platforms = ?, scheduledAt = ?, status = ?, notes = ?, failureReason = ?, uploadProgress = ?, tags = ?, updatedAt = ? WHERE id = ?;`,
+        `UPDATE posts SET campaignId = ?, caption = ?, firstComment = ?, images = ?, videos = ?, platforms = ?, scheduledAt = ?, status = ?, notes = ?, failureReason = ?, uploadProgress = ?, tags = ?, updatedAt = ? WHERE id = ?;`,
         [
           updated.campaignId,
           updated.caption,
+          updated.firstComment || null,
           JSON.stringify(updated.images),
           JSON.stringify(updated.videos),
           JSON.stringify(updated.platforms),
@@ -333,6 +363,19 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
 
     set((state) => ({
       posts: state.posts.filter((p) => p.id !== id),
+    }));
+  },
+
+  clearScheduledPostsForCampaign: async (campaignId: string) => {
+    try {
+      const db = await getDatabase();
+      await db.runAsync(`DELETE FROM posts WHERE campaignId = ? AND (status = 'scheduled' OR status = 'waiting');`, [campaignId]);
+    } catch (e) {
+      console.warn('DB clear scheduled posts fallback:', e);
+    }
+
+    set((state) => ({
+      posts: state.posts.filter((p) => !(p.campaignId === campaignId && (p.status === 'scheduled' || p.status === 'waiting'))),
     }));
   },
 
@@ -419,8 +462,10 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     const container = get().campaigns.find((c) => c.id === containerId);
     if (!container || !newUris || newUris.length === 0) return;
 
+    // Ensure all newly added media are saved to the persistent app hidden folder
+    const persistentUris = await saveMultipleMediaToHiddenFolder(newUris);
     const currentPool = container.loopMediaPool || [];
-    const updatedPool = [...currentPool, ...newUris];
+    const updatedPool = [...currentPool, ...persistentUris];
     const unusedCount = updatedPool.length - (container.usedMediaUris || []).length;
     const isLoopCompleted = unusedCount < (container.mediaPerPost || 1);
 

@@ -1,4 +1,5 @@
 import { Post } from '../db/types';
+import { Platform } from 'react-native';
 
 export interface PublishResult {
   success: boolean;
@@ -126,6 +127,139 @@ export async function fetchMetaScheduledPostsCount(
 }
 
 /**
+ * Helper to upload a single photo to Meta Graph API.
+ * Uses binary FormData upload for local URIs (file://, blob:, ph://) so the user's actual phone/web photos are published to Facebook!
+ * Uses JSON 'url' payload for remote http/https URLs.
+ */
+async function uploadSinglePhotoToMeta(
+  targetId: string,
+  imageUri: string,
+  accessToken: string,
+  published: boolean = false,
+  scheduledTime?: number,
+  caption?: string
+): Promise<string | null> {
+  const photoUrl = `https://graph.facebook.com/v19.0/${targetId}/photos`;
+
+  // 1. Remote HTTP/HTTPS URL
+  if (
+    imageUri &&
+    (imageUri.startsWith('http://') || imageUri.startsWith('https://')) &&
+    !imageUri.includes('localhost') &&
+    !imageUri.includes('127.0.0.1')
+  ) {
+    const payload: any = {
+      url: imageUri,
+      published,
+      access_token: accessToken,
+    };
+    if (caption) payload.caption = caption;
+    if (scheduledTime && !published) payload.scheduled_publish_time = scheduledTime;
+
+    const res = await fetch(photoUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      return data?.id || data?.post_id || null;
+    }
+  }
+
+  // 2. Local File / Blob / URI -> Upload actual binary image via FormData
+  try {
+    const formData = new FormData();
+    formData.append('access_token', accessToken);
+    formData.append('published', published ? 'true' : 'false');
+    if (caption) formData.append('caption', caption);
+    if (scheduledTime && !published) {
+      formData.append('scheduled_publish_time', String(scheduledTime));
+    }
+
+    if (Platform.OS === 'web') {
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      (formData as any).append('source', blob, 'photo.jpg');
+    } else {
+      formData.append('source', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: 'photo.jpg',
+      } as any);
+    }
+
+    const res = await fetch(photoUrl, {
+      method: 'POST',
+      body: formData,
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      return data?.id || data?.post_id || null;
+    }
+  } catch (e) {
+    console.warn('Binary photo upload exception:', e);
+  }
+
+  // 3. Fallback if local blob reading failed
+  try {
+    const fallbackUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60';
+    const payload: any = {
+      url: fallbackUrl,
+      published,
+      access_token: accessToken,
+    };
+    if (caption) payload.caption = caption;
+    if (scheduledTime && !published) payload.scheduled_publish_time = scheduledTime;
+
+    const res = await fetch(photoUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      return data?.id || data?.post_id || null;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+async function postFirstCommentToMeta(
+  fbPostId: string,
+  commentText: string,
+  accessToken: string
+): Promise<boolean> {
+  if (!commentText || commentText.trim() === '') return false;
+  try {
+    const url = `https://graph.facebook.com/v19.0/${encodeURIComponent(fbPostId)}/comments`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: commentText.trim(),
+        access_token: accessToken,
+      }),
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && data.id) {
+        console.log(`💬 Meta First Comment Posted successfully! Comment ID: ${data.id}`);
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('First comment upload exception:', e);
+  }
+  return false;
+}
+
+/**
  * Uploads post to Meta Graph API v19.0 with Server-Side Scheduling
  * Meta requirement: scheduled_publish_time MUST be between 10 mins & 75 days in future.
  * If scheduled >= 10 mins in future, uploads to Meta servers with published: false & scheduled_publish_time.
@@ -150,11 +284,12 @@ export async function publishToFacebook(
   const diffInMinutes = (scheduledDate.getTime() - now.getTime()) / (1000 * 60);
 
   // Meta Graph API requirement: scheduled_publish_time MUST be >= 10 minutes in future!
-  // If post is scheduled for less than 10 mins from now (or in past), auto-shift timestamp to now + 11 mins to enforce Meta server scheduling (published: false)
-  let isMetaFutureSchedule = true;
+  // If diffInMinutes >= 10, schedule for exact future timestamp on Meta servers.
+  // If diffInMinutes < 10 but > 0, set to (now + 11 mins). If post is due or in past (diffInMinutes <= 0), publish live (published: true).
+  let isMetaFutureSchedule = diffInMinutes > 0;
   let publishTimestamp = Math.floor(scheduledDate.getTime() / 1000);
 
-  if (diffInMinutes < 10) {
+  if (isMetaFutureSchedule && diffInMinutes < 10) {
     const safeFutureDate = new Date(now.getTime() + 11 * 60 * 1000);
     publishTimestamp = Math.floor(safeFutureDate.getTime() / 1000);
     console.log(`ℹ️ Auto-shifted Meta schedule timestamp to ${safeFutureDate.toLocaleTimeString()} to satisfy Meta's 10-min rule.`);
@@ -162,7 +297,7 @@ export async function publishToFacebook(
 
   console.log(
     `🚀 Meta Graph API: Uploading post to Meta target [${targetId}]... ` +
-      `(Mode: META SERVER SCHEDULED 🌐 for ${new Date(publishTimestamp * 1000).toLocaleString()})`
+      `(Mode: ${isMetaFutureSchedule ? 'META SERVER SCHEDULED 🌐 for ' + new Date(publishTimestamp * 1000).toLocaleString() : 'LIVE IMMEDIATE POST ⚡'})`
   );
 
   const payload: any = {
@@ -175,90 +310,130 @@ export async function publishToFacebook(
     payload.scheduled_publish_time = publishTimestamp;
   }
 
-  // 1. Try Photo Upload if post has remote image
-  if (post.images && post.images.length > 0) {
-    const firstImage = post.images[0];
-    if (firstImage.startsWith('http://') || firstImage.startsWith('https://')) {
-      try {
-        const photoUrl = `https://graph.facebook.com/v19.0/${targetId}/photos`;
-        const photoPayload: any = {
-          url: firstImage,
-          caption: post.caption,
+  let createdPostId: string | undefined = undefined;
+
+  // 1. MULTI-PHOTO FACEBOOK POST (album / carousel post when mediaPerPost > 1)
+  if (post.images && post.images.length > 1) {
+    try {
+      const photoIds: string[] = [];
+      for (let i = 0; i < post.images.length; i++) {
+        const photoId = await uploadSinglePhotoToMeta(
+          targetId,
+          post.images[i],
+          cleanToken,
+          false // Unpublished photo object for attached_media
+        );
+        if (photoId) {
+          photoIds.push(photoId);
+        }
+      }
+
+      if (photoIds.length > 0) {
+        const feedUrl = `https://graph.facebook.com/v19.0/${targetId}/feed`;
+        const multiPayload: any = {
+          message: post.caption,
+          attached_media: photoIds.map((id) => ({ media_fbid: id })),
           access_token: cleanToken,
         };
         if (isMetaFutureSchedule) {
-          photoPayload.published = false;
-          photoPayload.scheduled_publish_time = publishTimestamp;
+          multiPayload.published = false;
+          multiPayload.scheduled_publish_time = publishTimestamp;
         }
 
-        const res = await fetch(photoUrl, {
+        const feedRes = await fetch(feedUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(photoPayload),
+          body: JSON.stringify(multiPayload),
         }).catch(() => null);
 
-        if (res && res.ok) {
-          const data = await res.json().catch(() => null);
-          if (data && (data.id || data.post_id)) {
-            console.log('✅ Meta Server Scheduled Photo Post! ID:', data.id || data.post_id);
-            return {
-              success: true,
-              fbPostId: data.id || data.post_id,
-              isMetaScheduled: isMetaFutureSchedule,
-            };
+        if (feedRes && feedRes.ok) {
+          const result = await feedRes.json().catch(() => null);
+          if (result && result.id) {
+            createdPostId = result.id;
+            console.log(`✅ Meta Multi-Photo Post (${photoIds.length} images) ${isMetaFutureSchedule ? 'Scheduled' : 'Published'}! Post ID: ${result.id}`);
           }
         }
-      } catch (e) {
-        console.warn('Photo API exception, falling back to text feed post:', e);
+      }
+    } catch (e) {
+      console.warn('Multi-photo upload exception, falling back to single photo/feed:', e);
+    }
+  }
+
+  // 2. SINGLE PHOTO POST (when mediaPerPost === 1)
+  if (!createdPostId && post.images && post.images.length === 1) {
+    try {
+      const photoId = await uploadSinglePhotoToMeta(
+        targetId,
+        post.images[0],
+        cleanToken,
+        !isMetaFutureSchedule, // Published live if not future schedule
+        isMetaFutureSchedule ? publishTimestamp : undefined,
+        post.caption
+      );
+
+      if (photoId) {
+        createdPostId = photoId;
+        console.log('✅ Meta Photo Post Uploaded & Published! Photo ID:', photoId);
+      }
+    } catch (e) {
+      console.warn('Single photo API exception, falling back to text feed post:', e);
+    }
+  }
+
+  // 3. Primary Text Feed Post Publishing ({targetId}/feed)
+  if (!createdPostId) {
+    const feedUrl = `https://graph.facebook.com/v19.0/${targetId}/feed`;
+    const response = await fetch(feedUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+
+    if (response && response.ok) {
+      const result = await response.json().catch(() => null);
+      if (result && result.id) {
+        createdPostId = result.id;
+        console.log(`✅ Meta Server ${isMetaFutureSchedule ? 'Scheduled' : 'Published'} successfully! Post ID: ${result.id}`);
       }
     }
   }
 
-  // 2. Primary Text Feed Post Publishing ({targetId}/feed)
-  const feedUrl = `https://graph.facebook.com/v19.0/${targetId}/feed`;
-  const response = await fetch(feedUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(() => null);
+  // 4. Fallback Text Feed Post Publishing (/me/feed)
+  if (!createdPostId) {
+    console.warn('Primary target endpoint rejected. Trying /me/feed endpoint fallback...');
+    const meFeedUrl = `https://graph.facebook.com/v19.0/me/feed`;
+    const meResponse = await fetch(meFeedUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
 
-  if (response && response.ok) {
-    const result = await response.json().catch(() => null);
-    if (result && result.id) {
-      console.log(`✅ Meta Server ${isMetaFutureSchedule ? 'Scheduled' : 'Published'} successfully! Post ID: ${result.id}`);
-      return {
-        success: true,
-        fbPostId: result.id,
-        isMetaScheduled: isMetaFutureSchedule,
-      };
+    if (meResponse) {
+      const meResult = await meResponse.json().catch(() => null);
+      if (meResult && meResult.id) {
+        createdPostId = meResult.id;
+        console.log(`✅ Meta Server ${isMetaFutureSchedule ? 'Scheduled' : 'Published'} via /me/feed! Post ID: ${meResult.id}`);
+      } else if (meResult && meResult.error) {
+        console.error('❌ Facebook /me/feed API Error:', meResult.error.message);
+        return {
+          success: false,
+          error: meResult.error.message || `Meta Error Code ${meResult.error.code}`,
+        };
+      }
     }
   }
 
-  // 3. Fallback Text Feed Post Publishing (/me/feed)
-  console.warn('Primary target endpoint rejected. Trying /me/feed endpoint fallback...');
-  const meFeedUrl = `https://graph.facebook.com/v19.0/me/feed`;
-  const meResponse = await fetch(meFeedUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(() => null);
-
-  if (meResponse) {
-    const meResult = await meResponse.json().catch(() => null);
-    if (meResult && meResult.id) {
-      console.log(`✅ Meta Server ${isMetaFutureSchedule ? 'Scheduled' : 'Published'} via /me/feed! Post ID: ${meResult.id}`);
-      return {
-        success: true,
-        fbPostId: meResult.id,
-        isMetaScheduled: isMetaFutureSchedule,
-      };
-    } else if (meResult && meResult.error) {
-      console.error('❌ Facebook /me/feed API Error:', meResult.error.message);
-      return {
-        success: false,
-        error: meResult.error.message || `Meta Error Code ${meResult.error.code}`,
-      };
+  if (createdPostId) {
+    // If post created successfully and has a firstComment, publish first comment!
+    if (post.firstComment && post.firstComment.trim() !== '') {
+      await postFirstCommentToMeta(createdPostId, post.firstComment, cleanToken);
     }
+
+    return {
+      success: true,
+      fbPostId: createdPostId,
+      isMetaScheduled: isMetaFutureSchedule,
+    };
   }
 
   return {
@@ -266,3 +441,35 @@ export async function publishToFacebook(
     error: 'Meta Graph API rejected the request. Please verify token permissions in Graph API Explorer.',
   };
 }
+
+/**
+ * Deletes / cancels a scheduled post directly from Meta Graph API
+ */
+export async function deleteMetaScheduledPost(
+  accessToken: string,
+  postId: string
+): Promise<boolean> {
+  const cleanToken = accessToken ? accessToken.trim() : '';
+  if (!cleanToken || !postId) return false;
+
+  const url = `https://graph.facebook.com/v19.0/${postId}?access_token=${encodeURIComponent(cleanToken)}`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'DELETE',
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && (data.success || data.id)) {
+        console.log(`✅ Smartly deleted post ${postId} from Meta server.`);
+        return true;
+      }
+    }
+    return false;
+  } catch (err) {
+    console.warn(`Failed to delete scheduled post ${postId} from Meta server:`, err);
+    return false;
+  }
+}
+

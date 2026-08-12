@@ -9,21 +9,33 @@ import {
   Switch,
   Image,
   Alert,
+  Modal,
 } from 'react-native';
 import { AnimatedSheet } from '../common/AnimatedSheet';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCampaignStore } from '../../stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
-import { Container, Post, SocialPlatform } from '../../db/types';
+import { Container, Post, SkipTimeRange, SocialPlatform } from '../../db/types';
 import { FacebookMediaGrid } from '../common/FacebookMediaGrid';
 import { pickLocalMedia } from '../../utils/mediaPicker';
+import { saveMultipleMediaToHiddenFolder } from '../../utils/localMediaStorage';
 import { generateLoopPosts } from '../../services/loopContainerEngine';
+import { processSmartFirstComment } from '../../utils/tagProcessor';
+import {
+  getSmartSuggestions,
+  appendTagToText,
+  CATEGORY_TAG_PRESETS,
+  extractHashtags,
+  extractMentions,
+} from '../../utils/tagSuggestionService';
 import {
   Plus,
   Trash2,
   Check,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
+  X,
   Image as ImageIcon,
   Sparkles,
   Clock,
@@ -41,6 +53,7 @@ import {
   Infinity as InfinityIcon,
   AlertCircle,
   Repeat,
+  MessageSquare,
 } from 'lucide-react-native';
 import { platformColors } from '../../theme/colors';
 
@@ -73,7 +86,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   existingContainer,
 }) => {
   const colors = useThemeStore((state) => state.colors);
-  const { addCampaign, updateCampaign, addPost } = useCampaignStore();
+  const { addCampaign, updateCampaign, addPost, clearScheduledPostsForCampaign } = useCampaignStore();
 
   const [title, setTitle] = useState(existingContainer?.title || '');
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(
@@ -108,6 +121,44 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [endDate, setEndDate] = useState<string>(
     existingContainer?.endDate || getTomorrowISO()
   );
+  const [endTime, setEndTime] = useState<string>(
+    existingContainer?.endTime || '23:59'
+  );
+
+  // Skip Time Ranges state & modal controls
+  const [skipTimeRanges, setSkipTimeRanges] = useState<SkipTimeRange[]>(
+    existingContainer?.skipTimeRanges || []
+  );
+  const [skipModalVisible, setSkipModalVisible] = useState<boolean>(false);
+  const [newSkipLabel, setNewSkipLabel] = useState<string>('');
+  const [newSkipStartDate, setNewSkipStartDate] = useState<string>(getTodayISO());
+  const [newSkipStartTime, setNewSkipStartTime] = useState<string>('23:00');
+  const [newSkipEndDate, setNewSkipEndDate] = useState<string>(getTomorrowISO());
+  const [newSkipEndTime, setNewSkipEndTime] = useState<string>('07:00');
+
+  const handleAddSkipTimeRange = () => {
+    const normStartD = smartNormalizeDate(newSkipStartDate) || getTodayISO();
+    const normStartT = smartNormalizeTime(newSkipStartTime) || '23:00';
+    const normEndD = smartNormalizeDate(newSkipEndDate) || getTomorrowISO();
+    const normEndT = smartNormalizeTime(newSkipEndTime) || '07:00';
+
+    const newRange: SkipTimeRange = {
+      id: 'skip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      startDate: normStartD,
+      startTime: normStartT,
+      endDate: normEndD,
+      endTime: normEndT,
+      label: newSkipLabel.trim() || `Skip Window #${skipTimeRanges.length + 1}`,
+    };
+
+    setSkipTimeRanges([...skipTimeRanges, newRange]);
+    setNewSkipLabel('');
+    Alert.alert('Success', 'Skip time range added successfully!');
+  };
+
+  const handleRemoveSkipTimeRange = (id: string) => {
+    setSkipTimeRanges(skipTimeRanges.filter((r) => r.id !== id));
+  };
 
   // Collapsible Social Media state
   const [socialsExpanded, setSocialsExpanded] = useState<boolean>(false);
@@ -119,9 +170,20 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
     connectedFbAccounts[0]?.id || ''
   );
 
+  // First Comment state variables
+  const [enableFirstComment, setEnableFirstComment] = useState<boolean>(
+    existingContainer?.enableFirstComment ?? false
+  );
+  const [firstComment, setFirstComment] = useState<string>(
+    existingContainer?.firstComment || ''
+  );
+
   // Loop Container state variables
   const [isLoopContainer, setIsLoopContainer] = useState<boolean>(
     existingContainer?.isLoopContainer || false
+  );
+  const [autoNextRound, setAutoNextRound] = useState<boolean>(
+    existingContainer?.autoNextRound ?? true
   );
   const [mediaPerPost, setMediaPerPost] = useState<number>(
     existingContainer?.mediaPerPost || 1
@@ -137,9 +199,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         ]
   );
   const [loopMediaPool, setLoopMediaPool] = useState<string[]>(
-    existingContainer?.loopMediaPool && existingContainer.loopMediaPool.length > 0
-      ? existingContainer.loopMediaPool
-      : [SAMPLE_IMAGES[0], SAMPLE_IMAGES[1], SAMPLE_IMAGES[2]]
+    existingContainer?.loopMediaPool || []
   );
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
@@ -179,19 +239,11 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [posts, setPosts] = useState<DraftPostItem[]>([
     {
       id: '1',
-      caption: '🚀 Excited to launch our new product line! Check out the details below. #viral #marketing @meta',
-      images: [SAMPLE_IMAGES[0], SAMPLE_IMAGES[1], SAMPLE_IMAGES[2]],
+      caption: '',
+      images: [],
       scheduledDate: getTodayISO(),
       scheduledTime: getFutureTimeString(30),
-      expanded: false,
-    },
-    {
-      id: '2',
-      caption: '✨ Morning motivation for creators: Stay consistent and keep building! #tech #growth @creator',
-      images: [SAMPLE_IMAGES[0]],
-      scheduledDate: getTodayISO(),
-      scheduledTime: getFutureTimeString(60),
-      expanded: false,
+      expanded: true,
     },
   ]);
 
@@ -233,9 +285,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
     setPosts(
       posts.map((p) => {
         if (p.id === id) {
-          const current = p.caption;
-          const space = current.endsWith(' ') || current === '' ? '' : ' ';
-          return { ...p, caption: current + space + tag };
+          return { ...p, caption: appendTagToText(p.caption, tag) };
         }
         return p;
       })
@@ -301,13 +351,15 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           return;
         }
 
+        const persistentMediaPool = await saveMultipleMediaToHiddenFolder(loopMediaPool);
+
         const loopContainerData: Container = {
           id: containerId,
           title: title.trim(),
-          description: `Loop Container (${loopMediaPool.length} media pool, ${loopDescriptions.length} captions)`,
+          description: `Loop Container (${persistentMediaPool.length} media pool, ${loopDescriptions.length} captions)`,
           category: 'Loop Container',
           color: '#8B5CF6',
-          thumbnailUri: loopMediaPool[0] || SAMPLE_IMAGES[0],
+          thumbnailUri: persistentMediaPool[0] || undefined,
           platforms: selectedPlatforms,
           smartSchedulingEnabled: true, // Always ON for loop containers
           intervalMinutes: intervalMinutes || 60,
@@ -315,19 +367,25 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           startTime: normStartT,
           hasEndDateLimit: hasEndDateLimit,
           endDate: hasEndDateLimit ? smartNormalizeDate(endDate) : undefined,
+          endTime: hasEndDateLimit ? smartNormalizeTime(endTime) : undefined,
           isPaused: false,
           createdAt: new Date().toISOString(),
           isLoopContainer: true,
+          autoNextRound: autoNextRound,
           mediaPerPost: Math.max(1, mediaPerPost || 1),
           loopDescriptions: loopDescriptions,
-          loopMediaPool: loopMediaPool,
+          loopMediaPool: persistentMediaPool,
           usedMediaUris: existingContainer?.usedMediaUris || [],
           currentLoopRound: existingContainer?.currentLoopRound || 1,
           isLoopCompleted: false,
+          skipTimeRanges: skipTimeRanges,
+          enableFirstComment: enableFirstComment,
+          firstComment: firstComment,
         };
 
         if (existingContainer) {
           await updateCampaign(loopContainerData);
+          await clearScheduledPostsForCampaign(containerId);
         } else {
           await addCampaign(loopContainerData);
         }
@@ -336,12 +394,13 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         const result = generateLoopPosts({
           container: loopContainerData,
           loopDescriptions,
-          loopMediaPool,
+          loopMediaPool: persistentMediaPool,
           usedMediaUris: existingContainer?.usedMediaUris || [],
           mediaPerPost: Math.max(1, mediaPerPost || 1),
           startDate: normStartD,
           startTime: normStartT,
           endDate: hasEndDateLimit ? smartNormalizeDate(endDate) : undefined,
+          endTime: hasEndDateLimit ? smartNormalizeTime(endTime) : undefined,
           intervalMinutes: intervalMinutes || 60,
           platforms: selectedPlatforms,
         });
@@ -378,8 +437,12 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         startTime: normStartT,
         hasEndDateLimit: hasEndDateLimit,
         endDate: hasEndDateLimit ? smartNormalizeDate(endDate) : undefined,
+        endTime: hasEndDateLimit ? smartNormalizeTime(endTime) : undefined,
+        skipTimeRanges: skipTimeRanges,
         isPaused: false,
         createdAt: new Date().toISOString(),
+        enableFirstComment: enableFirstComment,
+        firstComment: firstComment,
       };
 
       if (existingContainer) {
@@ -388,27 +451,21 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         await addCampaign(containerData);
       }
 
-      // Safe date calculation
+      // Safe date calculation for standard containers
       let baseTimestamp = Date.parse(`${normStartD}T${normStartT}:00`);
-      if (isNaN(baseTimestamp) || baseTimestamp <= Date.now()) {
+      if (isNaN(baseTimestamp) || baseTimestamp <= Date.now() + 10 * 60000) {
         baseTimestamp = Date.now() + 15 * 60000;
       }
-      let currentScheduleDate = new Date(baseTimestamp);
+
+      const cleanIntervalMinutes = Math.max(1, Number(intervalMinutes) || 60);
 
       for (let i = 0; i < posts.length; i++) {
         const draft = posts[i];
         let scheduledISO: string;
 
         if (smartScheduling) {
-          if (i > 0) {
-            currentScheduleDate = new Date(
-              currentScheduleDate.getTime() + (intervalMinutes || 60) * 60 * 1000
-            );
-          }
-          if (currentScheduleDate.getTime() <= Date.now()) {
-            currentScheduleDate = new Date(Date.now() + (i + 1) * 30 * 60000);
-          }
-          scheduledISO = currentScheduleDate.toISOString();
+          const postTimestamp = baseTimestamp + (i * cleanIntervalMinutes * 60 * 1000);
+          scheduledISO = new Date(postTimestamp).toISOString();
         } else {
           const draftD = smartNormalizeDate(draft.scheduledDate || normStartD);
           const draftT = smartNormalizeTime(draft.scheduledTime || normStartT);
@@ -427,11 +484,22 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         const extractedTags = draft.caption.match(/#\w+/g) || [];
         const extractedMentions = draft.caption.match(/@\w+/g) || [];
 
+        let processedFirstComment: string | undefined = undefined;
+        if (enableFirstComment && firstComment) {
+          processedFirstComment = processSmartFirstComment(firstComment, {
+            title: title.trim(),
+            caption: draft.caption,
+            hashtags: extractedTags,
+            scheduledAt: scheduledISO,
+          });
+        }
+
         const newPost: Post = {
           id: 'post_' + Date.now() + '_' + i,
           campaignId: containerId,
           caption: draft.caption,
-          images: draft.images.length > 0 ? draft.images : [SAMPLE_IMAGES[i % SAMPLE_IMAGES.length]],
+          firstComment: processedFirstComment,
+          images: draft.images,
           videos: [],
           platforms: selectedPlatforms,
           scheduledAt: scheduledISO,
@@ -580,27 +648,53 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         </View>
 
         {isLoopContainer && (
-          <View style={[styles.loopMediaCountRow, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
-            <View style={styles.loopMediaCountLeft}>
-              <Sparkles size={16} color={colors.primary} />
-              <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
-                Number of Media per Post
-              </Text>
+          <View>
+            <View style={[styles.loopMediaCountRow, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+              <View style={styles.loopMediaCountLeft}>
+                <Sparkles size={16} color={colors.primary} />
+                <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+                  Number of Media per Post
+                </Text>
+              </View>
+              <View style={styles.mediaCountControl}>
+                <TouchableOpacity
+                  onPress={() => setMediaPerPost(Math.max(1, mediaPerPost - 1))}
+                  style={[styles.mediaCountBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                >
+                  <Text style={[styles.mediaCountBtnText, { color: colors.textPrimary }]}>-</Text>
+                </TouchableOpacity>
+                <Text style={[styles.mediaCountVal, { color: colors.primary }]}>{mediaPerPost}</Text>
+                <TouchableOpacity
+                  onPress={() => setMediaPerPost(mediaPerPost + 1)}
+                  style={[styles.mediaCountBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                >
+                  <Text style={[styles.mediaCountBtnText, { color: colors.textPrimary }]}>+</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.mediaCountControl}>
-              <TouchableOpacity
-                onPress={() => setMediaPerPost(Math.max(1, mediaPerPost - 1))}
-                style={[styles.mediaCountBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <Text style={[styles.mediaCountBtnText, { color: colors.textPrimary }]}>-</Text>
-              </TouchableOpacity>
-              <Text style={[styles.mediaCountVal, { color: colors.primary }]}>{mediaPerPost}</Text>
-              <TouchableOpacity
-                onPress={() => setMediaPerPost(mediaPerPost + 1)}
-                style={[styles.mediaCountBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <Text style={[styles.mediaCountBtnText, { color: colors.textPrimary }]}>+</Text>
-              </TouchableOpacity>
+
+            {/* Auto-Continue to Next Round Toggle */}
+            <View
+              style={{ backgroundColor: colors.surfaceVariant, borderColor: colors.border, marginTop: 10, padding: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
+                <Repeat size={18} color="#8B5CF6" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 2, fontSize: 13 }]}>
+                    Auto-Continue to Next Round
+                  </Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 14 }}>
+                    {autoNextRound
+                      ? '🔄 Infinite mode: Automatically resets media pool & continues next rounds until Hard End Date Cutoff.'
+                      : '🛑 Manual mode: Stops when media pool ends & displays "▶ Next Loop" button.'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={autoNextRound}
+                onValueChange={setAutoNextRound}
+                trackColor={{ false: colors.border, true: '#8B5CF6' }}
+              />
             </View>
           </View>
         )}
@@ -622,6 +716,79 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             onChangeText={setTitle}
           />
         </View>
+
+        {/* Smart First Comment Option Card */}
+        <View style={[styles.loopToggleCard, { backgroundColor: enableFirstComment ? colors.primaryContainer + '35' : colors.surfaceVariant, borderColor: enableFirstComment ? colors.primary : colors.border, marginTop: 12 }]}>
+          <View style={styles.loopToggleLeft}>
+            <MessageSquare size={18} color={enableFirstComment ? colors.primary : colors.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.loopToggleTitle, { color: colors.textPrimary }]}>
+                Smart First Comment
+              </Text>
+              <Text style={[styles.loopToggleSubtitle, { color: enableFirstComment ? colors.primary : colors.textSecondary }]}>
+                Auto-add first comment to every post in this container
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={enableFirstComment}
+            onValueChange={setEnableFirstComment}
+            trackColor={{ false: colors.border, true: colors.primary }}
+          />
+        </View>
+
+        {enableFirstComment && (
+          <View style={[styles.inputGroup, { marginTop: 10 }]}>
+            <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>First Comment Template</Text>
+            <TextInput
+              style={[
+                styles.textAreaInput,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                  color: colors.textPrimary,
+                  borderColor: colors.border,
+                  minHeight: 65,
+                },
+              ]}
+              multiline
+              placeholder="e.g. Thanks for watching! Check out our page for details. {hashtags}"
+              placeholderTextColor={colors.textMuted}
+              value={firstComment}
+              onChangeText={setFirstComment}
+            />
+
+            {/* Quick Smart Tags insertion chips */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, alignSelf: 'center', marginRight: 4 }}>Insert Tag:</Text>
+              {[
+                { tag: '{hashtags}', label: '+ {hashtags}' },
+                { tag: '{title}', label: '+ {title}' },
+                { tag: '{round}', label: '+ {round}' },
+                { tag: '{date}', label: '+ {date}' },
+                { tag: '{time}', label: '+ {time}' },
+              ].map((chip) => (
+                <TouchableOpacity
+                  key={chip.tag}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    const space = firstComment.endsWith(' ') || firstComment === '' ? '' : ' ';
+                    setFirstComment(firstComment + space + chip.tag);
+                  }}
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>{chip.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Collapsible Multi-Tick Target Platforms Grid */}
         <TouchableOpacity
@@ -927,21 +1094,74 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                 </View>
 
                 {hasEndDateLimit && (
-                  <View style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 8 }]}>
-                    <CalendarIcon size={14} color={colors.danger} />
-                    <TextInput
-                      style={[styles.dateInputText, { color: colors.textPrimary }]}
-                      value={endDate}
-                      onChangeText={setEndDate}
-                      onBlur={() => setEndDate(smartNormalizeDate(endDate))}
-                      placeholder="YYYY-MM-DD or 12/02/2026"
-                      placeholderTextColor={colors.textMuted}
-                      // @ts-ignore
-                      type="date"
-                    />
+                  <View style={[styles.dateTimeRow, { marginTop: 8 }]}>
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={[
+                        styles.dateBox,
+                        { backgroundColor: colors.surface, borderColor: colors.border },
+                      ]}
+                    >
+                      <CalendarIcon size={14} color={colors.danger} />
+                      <TextInput
+                        style={[styles.dateInputText, { color: colors.textPrimary }]}
+                        value={endDate}
+                        onChangeText={setEndDate}
+                        onBlur={() => setEndDate(smartNormalizeDate(endDate))}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={colors.textMuted}
+                        // @ts-ignore
+                        type="date"
+                      />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={[
+                        styles.timeBox,
+                        { backgroundColor: colors.surface, borderColor: colors.border },
+                      ]}
+                    >
+                      <Clock size={14} color={colors.danger} />
+                      <TextInput
+                        style={[styles.timeInputText, { color: colors.textPrimary }]}
+                        value={endTime}
+                        onChangeText={setEndTime}
+                        onBlur={() => setEndTime(smartNormalizeTime(endTime))}
+                        placeholder="23:59"
+                        placeholderTextColor={colors.textMuted}
+                        // @ts-ignore
+                        type="time"
+                      />
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
+
+              {/* Skip Time Ranges Trigger Button */}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setSkipModalVisible(true)}
+                style={{
+                  marginTop: 14,
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: skipTimeRanges.length > 0 ? '#8B5CF615' : colors.surface,
+                  borderColor: skipTimeRanges.length > 0 ? '#8B5CF6' : colors.border,
+                  borderWidth: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Clock size={16} color={skipTimeRanges.length > 0 ? '#8B5CF6' : colors.primary} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginLeft: 8 }}>
+                    Add Skip Time{skipTimeRanges.length > 0 ? ` (${skipTimeRanges.length})` : ''}
+                  </Text>
+                </View>
+                <ChevronRight size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -1184,35 +1404,42 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                       onChangeText={(text) => handleUpdatePostCaption(item.id, text)}
                     />
 
-                    {/* Hashtags & Mentions Suggestion Bar */}
-                    <Text style={[styles.suggestLabel, { color: colors.textSecondary }]}>
-                      QUICK HASHTAGS & MENTIONS
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
-                      {SAMPLE_HASHTAGS.map((tag) => (
-                        <TouchableOpacity
-                          key={tag}
-                          activeOpacity={0.8}
-                          onPress={() => handleAppendTag(item.id, tag)}
-                          style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}
-                        >
-                          <Tag size={10} color={colors.primary} />
-                          <Text style={[styles.tagPillText, { color: colors.primary }]}>{tag}</Text>
-                        </TouchableOpacity>
-                      ))}
+                    {/* Smart Dynamic Hashtags & Mentions Suggestion Bar */}
+                    {(() => {
+                      const { hashtags, mentions } = getSmartSuggestions(item.caption, 'general');
+                      return (
+                        <View style={{ marginBottom: 10 }}>
+                          <Text style={[styles.suggestLabel, { color: colors.textSecondary }]}>
+                            SMART HASHTAGS & @MENTIONS SUGGESTIONS
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
+                            {hashtags.map((tag) => (
+                              <TouchableOpacity
+                                key={tag}
+                                activeOpacity={0.8}
+                                onPress={() => handleAppendTag(item.id, tag)}
+                                style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}
+                              >
+                                <Tag size={10} color={colors.primary} />
+                                <Text style={[styles.tagPillText, { color: colors.primary }]}>{tag}</Text>
+                              </TouchableOpacity>
+                            ))}
 
-                      {SAMPLE_MENTIONS.map((men) => (
-                        <TouchableOpacity
-                          key={men}
-                          activeOpacity={0.8}
-                          onPress={() => handleAppendTag(item.id, men)}
-                          style={[styles.tagPill, { backgroundColor: colors.surfaceVariant }]}
-                        >
-                          <AtSign size={10} color={colors.textSecondary} />
-                          <Text style={[styles.tagPillText, { color: colors.textPrimary }]}>{men}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                            {mentions.map((men) => (
+                              <TouchableOpacity
+                                key={men}
+                                activeOpacity={0.8}
+                                onPress={() => handleAppendTag(item.id, men)}
+                                style={[styles.tagPill, { backgroundColor: '#3B82F618', borderColor: '#3B82F640', borderWidth: 1 }]}
+                              >
+                                <AtSign size={10} color="#3B82F6" />
+                                <Text style={[styles.tagPillText, { color: '#3B82F6', fontWeight: '800' }]}>{men}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      );
+                    })()}
 
                     {/* Attached Media Header & Local Gallery Uploader */}
                     <View style={styles.mediaHeaderRow}>
@@ -1432,6 +1659,190 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Skip Time Ranges Management Modal Popup */}
+      <Modal
+        visible={skipModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSkipModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.background, maxHeight: '85%', width: '92%', maxWidth: 440, padding: 18, borderRadius: 20, display: 'flex', flexDirection: 'column' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Clock size={20} color="#8B5CF6" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 8 }}>
+                  Skip Times {skipTimeRanges.length > 0 ? `(${skipTimeRanges.length})` : ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSkipModalVisible(false)}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flex: 1, width: '100%' }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={true}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 16, lineHeight: 16 }}>
+                Add time ranges to skip posting (e.g. night sleep hours or quiet windows). Post scheduling will automatically jump over these windows!
+              </Text>
+
+              {/* Form to Add New Skip Time Range */}
+              <View style={{ backgroundColor: colors.surfaceVariant, padding: 12, borderRadius: 14, marginBottom: 16, borderColor: colors.border, borderWidth: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}>
+                  + Add New Skip Time Range
+                </Text>
+
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border, height: 38, marginBottom: 10, fontSize: 13 }]}
+                  placeholder="Label (e.g. Night Sleep Window)"
+                  placeholderTextColor={colors.textMuted}
+                  value={newSkipLabel}
+                  onChangeText={setNewSkipLabel}
+                />
+
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+                  Start Date & Time
+                </Text>
+                <View style={[styles.dateTimeRow, { marginBottom: 10 }]}>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <CalendarIcon size={13} color={colors.primary} />
+                    <TextInput
+                      style={[styles.dateInputText, { color: colors.textPrimary }]}
+                      value={newSkipStartDate}
+                      onChangeText={setNewSkipStartDate}
+                      onBlur={() => setNewSkipStartDate(smartNormalizeDate(newSkipStartDate))}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="date"
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Clock size={13} color={colors.primary} />
+                    <TextInput
+                      style={[styles.timeInputText, { color: colors.textPrimary }]}
+                      value={newSkipStartTime}
+                      onChangeText={setNewSkipStartTime}
+                      onBlur={() => setNewSkipStartTime(smartNormalizeTime(newSkipStartTime))}
+                      placeholder="23:00"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="time"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+                  End Date & Time
+                </Text>
+                <View style={[styles.dateTimeRow, { marginBottom: 12 }]}>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <CalendarIcon size={13} color={colors.danger} />
+                    <TextInput
+                      style={[styles.dateInputText, { color: colors.textPrimary }]}
+                      value={newSkipEndDate}
+                      onChangeText={setNewSkipEndDate}
+                      onBlur={() => setNewSkipEndDate(smartNormalizeDate(newSkipEndDate))}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="date"
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Clock size={13} color={colors.danger} />
+                    <TextInput
+                      style={[styles.timeInputText, { color: colors.textPrimary }]}
+                      value={newSkipEndTime}
+                      onChangeText={setNewSkipEndTime}
+                      onBlur={() => setNewSkipEndTime(smartNormalizeTime(newSkipEndTime))}
+                      placeholder="07:00"
+                      placeholderTextColor={colors.textMuted}
+                      // @ts-ignore
+                      type="time"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleAddSkipTimeRange}
+                  style={{ backgroundColor: '#8B5CF6', paddingVertical: 10, borderRadius: 10, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>
+                    + Save Skip Range
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* List of Added Skip Ranges */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}>
+                Active Skip Windows ({skipTimeRanges.length})
+              </Text>
+
+              {skipTimeRanges.length === 0 ? (
+                <Text style={{ fontSize: 12, color: colors.textMuted, fontStyle: 'italic', textAlign: 'center', marginVertical: 12 }}>
+                  No skip time ranges added yet.
+                </Text>
+              ) : (
+                skipTimeRanges.map((range, idx) => (
+                  <View
+                    key={range.id || idx}
+                    style={{
+                      backgroundColor: colors.surfaceVariant,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      padding: 10,
+                      marginBottom: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>
+                        {range.label || `Skip Window #${idx + 1}`}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                        {range.startDate} {range.startTime}  ➔  {range.endDate} {range.endTime}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveSkipTimeRange(range.id)}
+                      style={{ padding: 6 }}
+                    >
+                      <Trash2 size={16} color={colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setSkipModalVisible(false)}
+              style={{ backgroundColor: colors.primary, paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 12 }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                Done
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </AnimatedSheet>
   );
 };
@@ -2135,5 +2546,18 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCard: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
   },
 });

@@ -28,7 +28,7 @@ export const useMediaStore = create<MediaState>((set, get) => ({
     set({ isLoading: true });
     try {
       const db = await getDatabase();
-      const raw = await db.getAllAsync<any>('SELECT * FROM media ORDER BY createdAt DESC;');
+      const raw = (await db.getAllAsync('SELECT * FROM media ORDER BY createdAt DESC;')) as any[];
       const items: MediaItem[] = raw.map((m) => ({
         id: m.id,
         uri: m.uri,

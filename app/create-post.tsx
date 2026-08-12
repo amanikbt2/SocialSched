@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Image, Alert } from 'react-native';
 import { useThemeStore } from '../src/stores/useThemeStore';
 import { useCampaignStore } from '../src/stores/useCampaignStore';
 import { SocialPlatform } from '../src/db/types';
-import { X, ImagePlus, Calendar, Clock, Sparkles, Check, Facebook, Instagram, Video, Tag, AlertCircle } from 'lucide-react-native';
+import { X, ImagePlus, Calendar, Clock, Sparkles, Check, Facebook, Instagram, Video, Tag, AtSign, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  getSmartSuggestions,
+  appendTagToText,
+  extractHashtags,
+  extractMentions,
+  CATEGORY_TAG_PRESETS,
+} from '../src/utils/tagSuggestionService';
 
 export default function CreatePostScreen() {
   const colors = useThemeStore((state) => state.colors);
@@ -13,6 +20,7 @@ export default function CreatePostScreen() {
   const router = useRouter();
 
   const [caption, setCaption] = useState('');
+  const [firstComment, setFirstComment] = useState('');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(
     campaigns.length > 0 ? campaigns[0].id : null
   );
@@ -21,6 +29,7 @@ export default function CreatePostScreen() {
   const [notes, setNotes] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(['SocialSched']);
+  const [activeCategory, setActiveCategory] = useState('general');
 
   // Date and Time selection state
   const tomorrow = new Date(Date.now() + 86400000);
@@ -68,7 +77,6 @@ export default function CreatePostScreen() {
       }
     } catch (e) {
       console.warn('Image picker error fallback:', e);
-      // Sample mock image fallback if user cancels or permission issue
       setAttachedImages([
         ...attachedImages,
         'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80',
@@ -93,15 +101,19 @@ export default function CreatePostScreen() {
 
   const handleSavePost = async (isDraft: boolean = false) => {
     if (!caption.trim() && attachedImages.length === 0) {
-      alert('Please enter a caption or attach an image.');
+      Alert.alert('Notice', 'Please enter a caption or attach an image.');
       return;
     }
 
     const dateObj = new Date(`${scheduledDate}T${scheduledTime}:00`);
 
+    const extractedTags = extractHashtags(caption);
+    const extractedMentions = extractMentions(caption);
+
     await addPost({
       campaignId: selectedCampaignId,
       caption: caption.trim(),
+      firstComment: firstComment.trim(),
       images: attachedImages,
       videos: [],
       platforms: selectedPlatforms,
@@ -109,7 +121,9 @@ export default function CreatePostScreen() {
       status: isDraft ? 'draft' : 'scheduled',
       notes: notes.trim(),
       failureReason: null,
-      tags,
+      tags: Array.from(new Set([...tags, ...extractedTags])),
+      hashtags: extractedTags,
+      mentions: extractedMentions,
     });
 
     handleSafeBack();
@@ -144,6 +158,112 @@ export default function CreatePostScreen() {
           <View style={styles.inputFooter}>
             <Text style={[styles.charCount, { color: colors.textSecondary }]}>{caption.length} chars</Text>
           </View>
+        </View>
+
+        {/* Smart Hashtags & @Mentions Suggestion Bar */}
+        {(() => {
+          const suggestions = getSmartSuggestions(caption, activeCategory);
+          return (
+            <View style={[styles.inputBox, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: -6, marginBottom: 16, padding: 12 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Sparkles size={14} color={colors.primary} />
+                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textPrimary, letterSpacing: 0.5 }}>
+                  SMART HASHTAGS & @MENTIONS SUGGESTIONS
+                </Text>
+              </View>
+
+              {/* Category Pills */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {Object.values(CATEGORY_TAG_PRESETS).map((cat) => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    activeOpacity={0.8}
+                    onPress={() => setActiveCategory(cat.id)}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 12,
+                      marginRight: 6,
+                      backgroundColor: activeCategory === cat.id ? colors.primaryContainer : colors.surfaceVariant,
+                      borderWidth: 1,
+                      borderColor: activeCategory === cat.id ? colors.primary : colors.border,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: activeCategory === cat.id ? colors.primary : colors.textSecondary,
+                      }}
+                    >
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Hashtag & Mention Pills */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {suggestions.hashtags.map((tag) => (
+                  <TouchableOpacity
+                    key={tag}
+                    activeOpacity={0.8}
+                    onPress={() => setCaption(appendTagToText(caption, tag))}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 14,
+                      backgroundColor: colors.primaryContainer,
+                      marginRight: 6,
+                    }}
+                  >
+                    <Tag size={10} color={colors.primary} />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>{tag}</Text>
+                  </TouchableOpacity>
+                ))}
+
+                {suggestions.mentions.map((men) => (
+                  <TouchableOpacity
+                    key={men}
+                    activeOpacity={0.8}
+                    onPress={() => setCaption(appendTagToText(caption, men))}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 14,
+                      backgroundColor: '#3B82F618',
+                      borderColor: '#3B82F640',
+                      borderWidth: 1,
+                      marginRight: 6,
+                    }}
+                  >
+                    <AtSign size={10} color="#3B82F6" />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#3B82F6' }}>{men}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          );
+        })()}
+
+        {/* Optional First Comment */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>First Comment (Optional)</Text>
+        <View style={[styles.inputBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <TextInput
+            placeholder="Write a first comment for this post (e.g. link or extra hashtags)..."
+            placeholderTextColor={colors.textMuted}
+            value={firstComment}
+            onChangeText={setFirstComment}
+            multiline
+            numberOfLines={2}
+            style={[styles.captionInput, { color: colors.textPrimary, minHeight: 45 }]}
+          />
         </View>
 
         {/* Platform Selection Chips */}
@@ -338,7 +458,7 @@ export default function CreatePostScreen() {
           activeOpacity={0.85}
           onPress={() => {
             if (!timeValidation.valid) {
-              alert(`⚠️ Cannot Schedule Post:\n\n${timeValidation.error}`);
+              Alert.alert('Cannot Schedule Post', timeValidation.error);
               return;
             }
             handleSavePost(false);

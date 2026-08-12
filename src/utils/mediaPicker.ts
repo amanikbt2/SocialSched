@@ -4,9 +4,10 @@ import { saveMultipleMediaToHiddenFolder } from './localMediaStorage';
 
 export async function pickLocalMedia(): Promise<string[]> {
   try {
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    const doc = (globalThis as any).document;
+    if (Platform.OS === 'web' && doc) {
       return new Promise<string[]>((resolve) => {
-        const input = document.createElement('input');
+        const input = doc.createElement('input');
         input.type = 'file';
         input.accept = 'image/*,video/*';
         input.multiple = true;

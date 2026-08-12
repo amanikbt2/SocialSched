@@ -1,6 +1,15 @@
 export type PostStatus = 'draft' | 'scheduled' | 'waiting' | 'uploading' | 'published' | 'failed' | 'paused' | 'missed';
 export type SocialPlatform = 'facebook' | 'instagram' | 'x' | 'tiktok';
 
+export interface SkipTimeRange {
+  id: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  label?: string;
+}
+
 export interface Campaign {
   id: string;
   title: string;
@@ -16,17 +25,22 @@ export interface Campaign {
   startTime: string;
   hasEndDateLimit?: boolean;
   endDate?: string;
+  endTime?: string;
   isPaused: boolean;
   createdAt: string;
 
   // Loop Container specific properties
   isLoopContainer?: boolean;
+  autoNextRound?: boolean;
   mediaPerPost?: number;
   loopDescriptions?: string[];
   loopMediaPool?: string[];
   usedMediaUris?: string[];
   currentLoopRound?: number;
   isLoopCompleted?: boolean;
+  skipTimeRanges?: SkipTimeRange[];
+  enableFirstComment?: boolean;
+  firstComment?: string;
 }
 
 // Alias Container to Campaign for exact domain alignment
@@ -36,6 +50,7 @@ export interface Post {
   id: string;
   campaignId: string | null;
   caption: string;
+  firstComment?: string;
   images: string[];
   videos: string[];
   platforms: SocialPlatform[];
@@ -83,4 +98,6 @@ export interface MagicDistributeConfig {
   blackoutStart: string;
   blackoutEnd: string;
   selectedDays: number[];
+  skipWeekends?: boolean;
+  maxPostsPerDay?: number;
 }

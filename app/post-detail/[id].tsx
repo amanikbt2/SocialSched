@@ -4,7 +4,7 @@ import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { Badge } from '../../src/components/common/Badge';
 import { PlatformBadge } from '../../src/components/common/PlatformBadge';
-import { ArrowLeft, Save, Copy, Trash2, Calendar, Clock, Tag, FileText } from 'lucide-react-native';
+import { ArrowLeft, Save, Copy, Trash2, Calendar, Clock, Tag, FileText, MessageSquare } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { format } from 'date-fns';
 
@@ -27,6 +27,7 @@ export default function PostDetailScreen() {
   const campaign = campaigns.find((c) => c.id === post.campaignId);
 
   const [caption, setCaption] = useState(post.caption);
+  const [firstComment, setFirstComment] = useState(post.firstComment || '');
   const [notes, setNotes] = useState(post.notes);
   const [scheduledAt, setScheduledAt] = useState(post.scheduledAt);
 
@@ -41,6 +42,7 @@ export default function PostDetailScreen() {
   const handleSave = async () => {
     await updatePost(post.id, {
       caption,
+      firstComment,
       notes,
       scheduledAt,
     });
@@ -105,6 +107,18 @@ export default function PostDetailScreen() {
           onChangeText={setCaption}
           multiline
           numberOfLines={5}
+          style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
+        />
+
+        {/* First Comment */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>First Comment</Text>
+        <TextInput
+          placeholder="No first comment..."
+          placeholderTextColor={colors.textMuted}
+          value={firstComment}
+          onChangeText={setFirstComment}
+          multiline
+          numberOfLines={3}
           style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
         />
 

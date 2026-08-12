@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, Animated } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, TouchableOpacity } from 'react-native';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { X } from 'lucide-react-native';
 
@@ -26,41 +26,55 @@ export const AnimatedSheet: React.FC<AnimatedSheetProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={[styles.backdrop, fullScreen ? { flex: 0 } : null]} />
-      </TouchableWithoutFeedback>
+      <View style={styles.overlayContainer}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.backdrop} />
+        </TouchableWithoutFeedback>
 
-      <View
-        style={[
-          styles.sheetContainer,
-          fullScreen ? styles.fullScreenContainer : null,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <View style={styles.handleBar} />
-        
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-            {subtitle ? <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
+        <View
+          style={[
+            styles.sheetContainer,
+            fullScreen ? styles.fullScreenContainer : null,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.handleBar} />
+          
+          <View style={styles.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+              {subtitle ? (
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <View style={[styles.closeBtn, { backgroundColor: colors.surfaceVariant }]}>
+                <X size={18} color={colors.textSecondary} />
+              </View>
+            </TouchableOpacity>
           </View>
 
-          <TouchableWithoutFeedback onPress={onClose}>
-            <View style={[styles.closeBtn, { backgroundColor: colors.surfaceVariant }]}>
-              <X size={18} color={colors.textSecondary} />
-            </View>
-          </TouchableWithoutFeedback>
+          <View style={[styles.content, fullScreen ? { flex: 1 } : { flexShrink: 1 }]}>
+            {children}
+          </View>
         </View>
-
-        <View style={styles.content}>{children}</View>
       </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlayContainer: {
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   sheetContainer: {
@@ -69,7 +83,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingHorizontal: 20,
     paddingBottom: 34,
-    maxHeight: '90%',
+    maxHeight: '85%',
+    width: '100%',
   },
   fullScreenContainer: {
     flex: 1,
@@ -77,7 +92,7 @@ const styles = StyleSheet.create({
     maxHeight: '100%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    marginTop: 24,
+    marginTop: 40,
   },
   handleBar: {
     width: 36,
@@ -110,7 +125,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    flex: 1,
     minHeight: 0,
   },
 });

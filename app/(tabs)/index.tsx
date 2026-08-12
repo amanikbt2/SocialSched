@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { ContainerCard } from '../../src/components/container/ContainerCard';
@@ -14,13 +15,13 @@ import { AnimatedSheet } from '../../src/components/common/AnimatedSheet';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
-import { fetchMetaScheduledPostsCount } from '../../src/services/facebookPublisher';
-import { Container } from '../../src/db/types';
-import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2 } from 'lucide-react-native';
+import { fetchMetaScheduledPostsCount, deleteMetaScheduledPost } from '../../src/services/facebookPublisher';
+import { Container, Post } from '../../src/db/types';
+import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react-native';
 
 export default function HomeScreen() {
   const colors = useThemeStore((state) => state.colors);
-  const { campaigns, posts, toggleCampaignPause, deleteCampaign, loadData } = useCampaignStore();
+  const { campaigns, posts, toggleCampaignPause, deleteCampaign, deletePost, loadData } = useCampaignStore();
   const { accounts, loadSavedAccounts } = useSocialAccountsStore();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -35,6 +36,26 @@ export default function HomeScreen() {
   const scheduledPosts = posts.filter(
     (p) => p.status === 'scheduled' || p.status === 'waiting'
   );
+
+  const handleDeletePost = (post: Post) => {
+    Alert.alert(
+      'Delete Scheduled Post',
+      'Are you sure you want to delete this scheduled post from container and cancel it on Meta server?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete & Remove',
+          style: 'destructive',
+          onPress: async () => {
+            await deletePost(post.id);
+            if (fbAccount?.accessToken) {
+              await deleteMetaScheduledPost(fbAccount.accessToken, post.id);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -260,6 +281,16 @@ export default function HomeScreen() {
                       <Globe size={10} color={colors.success} />
                     </View>
                   )}
+
+                  {/* SMART TRASH DELETE BUTTON */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => handleDeletePost(post)}
+                    style={styles.itemTrashBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 size={15} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
               );
             })
@@ -442,6 +473,14 @@ const styles = StyleSheet.create({
   itemTimeText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  itemTrashBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#EF444415',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyPopupBox: {
     padding: 30,

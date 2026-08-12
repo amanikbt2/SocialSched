@@ -21,7 +21,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F1115"
       },
-      "edgeToEdge": "enabled"
+      "edgeToEdge": "enabled",
+      "package": "com.sliver1.syncflow"
     },
     "web": {
       "bundler": "metro",

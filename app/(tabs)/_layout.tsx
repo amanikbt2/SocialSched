@@ -1,8 +1,8 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { useThemeStore } from '../../src/stores/useThemeStore';
-import { Home, FolderKanban, Calendar, Layers, Image as ImageIcon, Settings } from 'lucide-react-native';
-import { View, StyleSheet } from 'react-native';
+import { Home, FileText } from 'lucide-react-native';
+import { Platform } from 'react-native';
 
 export default function TabsLayout() {
   const colors = useThemeStore((state) => state.colors);
@@ -18,60 +18,60 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 8,
-          elevation: 10,
-          shadowColor: colors.cardShadow,
+          height: 60,
+          paddingBottom: 6,
+          paddingTop: 6,
+          elevation: 25,
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.12,
+          shadowRadius: 10,
+          ...(Platform.OS === 'web'
+            ? {
+                position: 'fixed' as any,
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 9999,
+              }
+            : {}),
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
+          justifyContent: 'center',
+          alignItems: 'center',
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '700',
+          marginTop: 1,
         },
       }}
     >
+      {/* 1. Home Tab */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Home size={22} color={color} />,
         }}
       />
+
+      {/* 2. Posts Manager Tab */}
       <Tabs.Screen
-        name="campaigns"
+        name="posts"
         options={{
-          title: 'Campaigns',
-          tabBarIcon: ({ color, size }) => <FolderKanban size={size} color={color} />,
+          title: 'Posts',
+          tabBarIcon: ({ color }) => <FileText size={22} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="schedule"
-        options={{
-          title: 'Schedule',
-          tabBarIcon: ({ color, size }) => <Calendar size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="queue"
-        options={{
-          title: 'Queue',
-          tabBarIcon: ({ color, size }) => <Layers size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="library"
-        options={{
-          title: 'Library',
-          tabBarIcon: ({ color, size }) => <ImageIcon size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
-        }}
-      />
+
+      {/* Hidden secondary routes (href: null hides them from bottom bar) */}
+      <Tabs.Screen name="campaigns" options={{ href: null }} />
+      <Tabs.Screen name="schedule" options={{ href: null }} />
+      <Tabs.Screen name="queue" options={{ href: null }} />
+      <Tabs.Screen name="library" options={{ href: null }} />
+      <Tabs.Screen name="settings" options={{ href: null }} />
     </Tabs>
   );
 }

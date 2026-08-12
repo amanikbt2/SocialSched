@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { Container, Post } from '../../db/types';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCampaignStore } from '../../stores/useCampaignStore';
+import { useQueueStore } from '../../stores/useQueueStore';
+import { getContainerStatusInfo } from '../../utils/containerStatusHelper';
 import { PlatformBadge } from '../common/PlatformBadge';
-import { Play, Pause, Edit3, Trash2, ChevronDown, ChevronUp, Sparkles, Repeat } from 'lucide-react-native';
+import { Play, Pause, Edit3, Trash2, ChevronDown, ChevronUp, Sparkles, Repeat, Clock, RefreshCw, WifiOff, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 interface ContainerCardProps {
@@ -24,22 +26,24 @@ export const ContainerCard: React.FC<ContainerCardProps> = ({
 }) => {
   const colors = useThemeStore((state) => state.colors);
   const triggerNextLoop = useCampaignStore((state) => state.triggerNextLoop);
+  const networkStatus = useQueueStore((state) => state.networkStatus);
+  const activePostId = useQueueStore((state) => state.activePostId);
   const router = useRouter();
 
   const [actionsExpanded, setActionsExpanded] = useState(false);
 
   const containerPosts = posts.filter((p) => p.campaignId === container.id);
   const totalCount = containerPosts.length;
-  const scheduledCount = containerPosts.filter(
-    (p) => p.status === 'scheduled' || p.status === 'waiting'
+  const publishedCount = containerPosts.filter(
+    (p) => p.status === 'published' || Date.parse(p.scheduledAt) <= Date.now()
   ).length;
-  const publishedCount = containerPosts.filter((p) => p.status === 'published').length;
 
   const defaultThumbnail =
     container.thumbnailUri ||
     'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60';
 
   const progressPercent = totalCount > 0 ? (publishedCount / totalCount) * 100 : 0;
+  const statusInfo = getContainerStatusInfo(container, posts, networkStatus, activePostId);
 
   return (
     <View
@@ -60,16 +64,19 @@ export const ContainerCard: React.FC<ContainerCardProps> = ({
           <View
             style={[
               styles.statusBadge,
-              { backgroundColor: container.isPaused ? colors.warning : colors.success },
+              { backgroundColor: statusInfo.badgeColor },
             ]}
           >
-            {container.isPaused ? (
-              <Pause size={9} color="#FFFFFF" />
-            ) : (
-              <Play size={9} color="#FFFFFF" />
-            )}
+            {statusInfo.status === 'paused' && <Pause size={9} color="#FFFFFF" />}
+            {statusInfo.status === 'calculating' && <Clock size={9} color="#FFFFFF" />}
+            {statusInfo.status === 'scheduling' && <RefreshCw size={9} color="#FFFFFF" />}
+            {statusInfo.status === 'waiting_network' && <WifiOff size={9} color="#FFFFFF" />}
+            {statusInfo.status === 'finished' && <CheckCircle2 size={9} color="#FFFFFF" />}
+            {statusInfo.status === 'failed' && <AlertCircle size={9} color="#FFFFFF" />}
+            {statusInfo.status === 'idle' && <Play size={9} color="#FFFFFF" />}
+
             <Text style={styles.statusText}>
-              {container.isPaused ? 'PAUSED' : 'RUNNING'}
+              {statusInfo.label}
             </Text>
           </View>
 
@@ -150,10 +157,10 @@ export const ContainerCard: React.FC<ContainerCardProps> = ({
           <View style={styles.progressLeft}>
             <View style={styles.progressTextRow}>
               <Text style={[styles.postCountText, { color: colors.textPrimary }]}>
-                {scheduledCount}/{totalCount} Scheduled
+                {publishedCount}/{totalCount}
               </Text>
               <Text style={[styles.uploadedText, { color: colors.success }]}>
-                {publishedCount} Done
+                Done
               </Text>
             </View>
 

@@ -6,6 +6,7 @@ import { Post } from '../db/types';
 
 let intervalId: NodeJS.Timeout | null = null;
 let isProcessing = false;
+const processingPostIds = new Set<string>();
 
 export function startQueueEngine() {
   if (intervalId) return;
@@ -23,36 +24,45 @@ export function stopQueueEngine() {
  * Manually trigger instant publishing for a post immediately
  */
 export async function triggerInstantPublish(postId: string): Promise<{ success: boolean; error?: string }> {
-  const { posts, updatePost } = useCampaignStore.getState();
-  const targetPost = posts.find((p) => p.id === postId);
-
-  if (!targetPost) {
-    return { success: false, error: 'Post not found.' };
+  if (processingPostIds.has(postId)) {
+    return { success: false, error: 'Post is currently being processed.' };
   }
+  processingPostIds.add(postId);
 
-  await updatePost(postId, { status: 'uploading', uploadProgress: 50, failureReason: null });
+  try {
+    const { posts, updatePost } = useCampaignStore.getState();
+    const targetPost = posts.find((p) => p.id === postId);
 
-  const fbAccount = useSocialAccountsStore.getState().getAccount('facebook');
+    if (!targetPost) {
+      return { success: false, error: 'Post not found.' };
+    }
 
-  if (!fbAccount || !fbAccount.isConnected || !fbAccount.accessToken) {
-    const errorMsg = 'No connected Facebook account found. Open Settings (☰) to connect your Facebook Page.';
-    await updatePost(postId, { status: 'failed', uploadProgress: 0, failureReason: errorMsg });
-    return { success: false, error: errorMsg };
-  }
+    await updatePost(postId, { status: 'uploading', uploadProgress: 50, failureReason: null });
 
-  console.log('🚀 Triggering instant publish to Facebook Page for post:', postId);
-  const fbResult = await publishToFacebook(
-    { ...targetPost, scheduledAt: new Date().toISOString() }, // Force immediate timestamp
-    fbAccount.accessToken,
-    fbAccount.pageId || 'me'
-  );
+    const fbAccount = useSocialAccountsStore.getState().getAccount('facebook');
 
-  if (fbResult.success) {
-    await updatePost(postId, { status: 'published', uploadProgress: 100, failureReason: null });
-    return { success: true };
-  } else {
-    await updatePost(postId, { status: 'failed', uploadProgress: 0, failureReason: fbResult.error });
-    return { success: false, error: fbResult.error };
+    if (!fbAccount || !fbAccount.isConnected || !fbAccount.accessToken) {
+      const errorMsg = 'No connected Facebook account found. Open Settings (☰) to connect your Facebook Page.';
+      await updatePost(postId, { status: 'failed', uploadProgress: 0, failureReason: errorMsg });
+      return { success: false, error: errorMsg };
+    }
+
+    console.log('🚀 Triggering instant publish to Facebook Page for post:', postId);
+    const fbResult = await publishToFacebook(
+      { ...targetPost, scheduledAt: new Date().toISOString() }, // Force immediate timestamp
+      fbAccount.accessToken,
+      fbAccount.pageId || 'me'
+    );
+
+    if (fbResult.success) {
+      await updatePost(postId, { status: 'published', uploadProgress: 100, failureReason: null });
+      return { success: true };
+    } else {
+      await updatePost(postId, { status: 'failed', uploadProgress: 0, failureReason: fbResult.error });
+      return { success: false, error: fbResult.error };
+    }
+  } finally {
+    processingPostIds.delete(postId);
   }
 }
 
@@ -88,16 +98,24 @@ async function processQueueTick() {
     }
 
     // 3. Find post currently uploading or next candidate post ready to send to Meta servers
-    let currentUpload = posts.find((p) => p.status === 'uploading');
+    let currentUpload = posts.find((p) => p.status === 'uploading' || processingPostIds.has(p.id));
 
     if (!currentUpload) {
-      // Pick ALL scheduled/waiting container posts so EVERYTHING uploads to Meta immediately!
-      const candidate = posts.find(
-        (p) => p.status === 'scheduled' || p.status === 'waiting' || p.status === 'paused'
-      );
+      // Pick posts ready for Meta:
+      // 1. Long schedules (>= 10 mins in future) -> Upload to Meta immediately so Meta handles server scheduling.
+      // 2. Short schedules (1-9 mins or due now) -> Wait until scheduledAt arrives, then publish live at exact minute!
+      const nowTime = Date.now();
+      const candidate = posts.find((p) => {
+        if (processingPostIds.has(p.id)) return false;
+        if (p.status !== 'scheduled' && p.status !== 'waiting' && p.status !== 'paused') return false;
+        const schedTime = Date.parse(p.scheduledAt);
+        const diffMins = (schedTime - nowTime) / (1000 * 60);
+        return diffMins >= 10 || schedTime <= nowTime;
+      });
 
       if (candidate) {
         currentUpload = candidate;
+        processingPostIds.add(candidate.id);
         await updatePost(candidate.id, {
           status: 'uploading',
           failureReason: null,
@@ -165,6 +183,7 @@ async function processQueueTick() {
           });
         }
 
+        processingPostIds.delete(currentUpload.id);
         setActiveUpload(null, 0);
         setEngineState('idle');
       } else {
