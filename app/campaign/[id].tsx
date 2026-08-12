@@ -37,16 +37,12 @@ import {
   AlertCircle,
   Tag,
   AtSign,
-  Clock,
   Globe,
   Repeat,
   Upload,
-  CheckCircle2,
   CheckSquare,
   Square,
   Trash2,
-  AlertCircle,
-  RefreshCw,
   MessageSquare,
 } from 'lucide-react-native';
 import { AddContainerModal } from '../../src/components/container/AddContainerModal';
@@ -56,6 +52,8 @@ export default function ContainerDetailScreen() {
   const router = useRouter();
   const colors = useThemeStore((state) => state.colors);
   const { campaigns, posts, toggleCampaignPause, triggerNextLoop, addMediaToLoopPool, loadData, deletePost, updatePost } = useCampaignStore();
+  const networkStatus = useQueueStore((state) => state.networkStatus);
+  const activePostId = useQueueStore((state) => state.activePostId);
 
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -164,6 +162,8 @@ export default function ContainerDetailScreen() {
     (p) => p.status === 'scheduled' || p.status === 'waiting'
   ).length;
 
+  const statusInfo = getContainerStatusInfo(container, posts, networkStatus, activePostId);
+
   const defaultThumbnail =
     container.thumbnailUri ||
     'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60';
@@ -269,6 +269,23 @@ export default function ContainerDetailScreen() {
               {(container.platforms || ['facebook', 'instagram']).map((plat) => (
                 <PlatformBadge key={plat} platform={plat} showLabel />
               ))}
+            </View>
+
+            {/* Live Status Pill */}
+            <View
+              style={[
+                styles.coverStatusBadge,
+                { backgroundColor: statusInfo.badgeColor + 'CC' },
+              ]}
+            >
+              {statusInfo.status === 'paused' && <Pause size={10} color="#FFFFFF" />}
+              {statusInfo.status === 'calculating' && <Clock size={10} color="#FFFFFF" />}
+              {statusInfo.status === 'scheduling' && <RefreshCw size={10} color="#FFFFFF" />}
+              {statusInfo.status === 'waiting_network' && <WifiOff size={10} color="#FFFFFF" />}
+              {statusInfo.status === 'finished' && <CheckCircle2 size={10} color="#FFFFFF" />}
+              {statusInfo.status === 'failed' && <AlertCircle size={10} color="#FFFFFF" />}
+              {statusInfo.status === 'idle' && <Play size={10} color="#FFFFFF" />}
+              <Text style={styles.coverStatusText}>{statusInfo.label}</Text>
             </View>
 
             <TouchableOpacity
@@ -687,6 +704,24 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  coverStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  coverStatusText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   statsRow: {
     flexDirection: 'row',

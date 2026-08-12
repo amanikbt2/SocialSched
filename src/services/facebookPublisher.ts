@@ -127,9 +127,26 @@ export async function fetchMetaScheduledPostsCount(
 }
 
 /**
+ * Returns true if this URI is a local device/computer path that can't be fetched by the browser.
+ * e.g. C:\Users\... or /storage/emulated/... on Windows/Android web.
+ */
+function isLocalPathOnWeb(uri: string): boolean {
+  if (Platform.OS !== 'web') return false;
+  if (!uri) return false;
+  // Windows path: C:\ or D:\
+  if (/^[a-zA-Z]:[/\\]/.test(uri)) return true;
+  // Android native path
+  if (uri.startsWith('/storage/') || uri.startsWith('/data/')) return true;
+  // file:// URI
+  if (uri.startsWith('file://')) return true;
+  return false;
+}
+
+/**
  * Helper to upload a single photo to Meta Graph API.
  * Uses binary FormData upload for local URIs (file://, blob:, ph://) so the user's actual phone/web photos are published to Facebook!
  * Uses JSON 'url' payload for remote http/https URLs.
+ * On web, local file system paths are skipped gracefully.
  */
 async function uploadSinglePhotoToMeta(
   targetId: string,
@@ -139,6 +156,12 @@ async function uploadSinglePhotoToMeta(
   scheduledTime?: number,
   caption?: string
 ): Promise<string | null> {
+  // On web, local paths (C:\Users\...) can't be fetched by the browser — skip silently
+  if (isLocalPathOnWeb(imageUri)) {
+    console.warn('⚠️ Skipping local path photo upload on web (not accessible by browser):', imageUri.substring(0, 60));
+    return null;
+  }
+
   const photoUrl = `https://graph.facebook.com/v19.0/${targetId}/photos`;
 
   // 1. Remote HTTP/HTTPS URL
@@ -169,38 +192,46 @@ async function uploadSinglePhotoToMeta(
   }
 
   // 2. Local File / Blob / URI -> Upload actual binary image via FormData
-  try {
-    const formData = new FormData();
-    formData.append('access_token', accessToken);
-    formData.append('published', published ? 'true' : 'false');
-    if (caption) formData.append('caption', caption);
-    if (scheduledTime && !published) {
-      formData.append('scheduled_publish_time', String(scheduledTime));
-    }
+  // (Only attempt on native, or on web if it's a blob: or accessible URL)
+  const isBlobOrAccessible = imageUri.startsWith('blob:') || imageUri.startsWith('data:');
+  if (Platform.OS !== 'web' || isBlobOrAccessible) {
+    try {
+      const formData = new FormData();
+      formData.append('access_token', accessToken);
+      formData.append('published', published ? 'true' : 'false');
+      if (caption) formData.append('caption', caption);
+      if (scheduledTime && !published) {
+        formData.append('scheduled_publish_time', String(scheduledTime));
+      }
 
-    if (Platform.OS === 'web') {
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      (formData as any).append('source', blob, 'photo.jpg');
-    } else {
-      formData.append('source', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: 'photo.jpg',
-      } as any);
-    }
+      if (Platform.OS === 'web') {
+        const response = await fetch(imageUri).catch(() => null);
+        if (response && response.ok) {
+          const blob = await response.blob();
+          (formData as any).append('source', blob, 'photo.jpg');
+        } else {
+          return null; // Can't fetch the blob — bail out gracefully
+        }
+      } else {
+        formData.append('source', {
+          uri: imageUri,
+          type: 'image/jpeg',
+          name: 'photo.jpg',
+        } as any);
+      }
 
-    const res = await fetch(photoUrl, {
-      method: 'POST',
-      body: formData,
-    }).catch(() => null);
+      const res = await fetch(photoUrl, {
+        method: 'POST',
+        body: formData,
+      }).catch(() => null);
 
-    if (res && res.ok) {
-      const data = await res.json().catch(() => null);
-      return data?.id || data?.post_id || null;
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        return data?.id || data?.post_id || null;
+      }
+    } catch (e) {
+      console.warn('Binary photo upload exception:', e);
     }
-  } catch (e) {
-    console.warn('Binary photo upload exception:', e);
   }
 
   // 3. Fallback if local blob reading failed
@@ -276,6 +307,28 @@ export async function publishToFacebook(
       success: false,
       error: 'No Facebook Page Access Token provided. Please connect your Facebook account in Settings (☰).',
     };
+  }
+
+  // ⚡ Quick token expiry pre-check — avoids spamming failed requests for every post
+  try {
+    const debugUrl = `https://graph.facebook.com/v19.0/me?fields=id&access_token=${encodeURIComponent(cleanToken)}`;
+    const debugRes = await fetch(debugUrl).catch(() => null);
+    if (debugRes && !debugRes.ok) {
+      const debugData = await debugRes.json().catch(() => null);
+      if (debugData?.error) {
+        const errMsg = debugData.error.message || 'Facebook token invalid or expired.';
+        // Token expired or invalid — return error immediately, queue engine will mark all as failed
+        if (debugData.error.code === 190 || errMsg.toLowerCase().includes('session') || errMsg.toLowerCase().includes('expired') || errMsg.toLowerCase().includes('invalid')) {
+          console.error('🔑 Token expired/invalid — stopping queue. Update your token in Settings!');
+          return {
+            success: false,
+            error: `🔑 Token Expired: ${errMsg}. Go to Settings → Facebook → Update Token.`,
+          };
+        }
+      }
+    }
+  } catch (_) {
+    // Skip pre-check if network error, proceed normally
   }
 
   const targetId = pageId && pageId !== 'me' ? pageId : 'me';

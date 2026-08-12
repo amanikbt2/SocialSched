@@ -86,7 +86,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   existingContainer,
 }) => {
   const colors = useThemeStore((state) => state.colors);
-  const { addCampaign, updateCampaign, addPost, clearScheduledPostsForCampaign } = useCampaignStore();
+  const { addCampaign, updateCampaign, addPost, addPostsBatch, clearScheduledPostsForCampaign } = useCampaignStore();
 
   const [title, setTitle] = useState(existingContainer?.title || '');
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(
@@ -411,9 +411,10 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           isLoopCompleted: result.isLoopCompleted,
         });
 
-        for (const p of result.newPosts) {
-          await addPost(p);
-        }
+        // ⚡ Batch insert ALL loop posts at once — no sequential waiting!
+        // This immediately makes them visible in the queue so the engine
+        // can start picking up ready posts without waiting for the full save.
+        await addPostsBatch(result.newPosts);
 
         onClose();
         return;
@@ -590,6 +591,48 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 
   const isFormTimeValid = startValidation.valid && !invalidCustomPost;
 
+  // ── Full form validation for Save Button label & color ──────────────────
+  const getFormValidation = (): { valid: boolean; error: string; errorType: 'title' | 'media' | 'descriptions' | 'time' | 'posts' | null } => {
+    // 1. Title required
+    if (!title.trim()) {
+      return { valid: false, error: '⚠️ Title is required', errorType: 'title' };
+    }
+
+    // 2. Loop container checks
+    if (isLoopContainer) {
+      if (loopDescriptions.length === 0) {
+        return { valid: false, error: '⚠️ Add at least 1 description', errorType: 'descriptions' };
+      }
+      if (loopMediaPool.length === 0) {
+        return { valid: false, error: '⚠️ Media pool is empty — add photos/videos', errorType: 'media' };
+      }
+    }
+
+    // 3. Standard container: need at least 1 post
+    if (!isLoopContainer && posts.length === 0) {
+      return { valid: false, error: '⚠️ Add at least 1 post', errorType: 'posts' };
+    }
+
+    // 4. Time validation
+    if (!isFormTimeValid) {
+      if (!startValidation.valid) {
+        return { valid: false, error: startValidation.error || '⏰ Fix start time (min 10 mins)', errorType: 'time' };
+      }
+      if (invalidCustomPost) {
+        return {
+          valid: false,
+          error: `⏰ Fix time for: "${getFirst5Words(invalidCustomPost.caption)}"`,
+          errorType: 'time',
+        };
+      }
+    }
+
+    return { valid: true, error: '', errorType: null };
+  };
+
+  const formValidation = getFormValidation();
+  const isFormReady = formValidation.valid;
+
   const getFirst5Words = (text: string) => {
     if (!text || text.trim() === '') return 'Empty caption post...';
     const words = text.trim().split(/\s+/);
@@ -700,18 +743,29 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         )}
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>Container Name</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <Text style={[styles.inputLabel, { color: !title.trim() ? '#EF4444' : colors.textPrimary, marginBottom: 0 }]}>
+              Container Name {!title.trim() ? '— Required!' : ''}
+            </Text>
+            {!title.trim() && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <AlertCircle size={12} color="#EF4444" />
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#EF4444' }}>REQUIRED</Text>
+              </View>
+            )}
+          </View>
           <TextInput
             style={[
               styles.textInput,
               {
-                backgroundColor: colors.surfaceVariant,
+                backgroundColor: !title.trim() ? '#FEF2F2' : colors.surfaceVariant,
                 color: colors.textPrimary,
-                borderColor: colors.border,
+                borderColor: !title.trim() ? '#EF4444' : colors.border,
+                borderWidth: !title.trim() ? 2 : 1,
               },
             ]}
             placeholder="e.g. Summer FB & IG Campaign"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={!title.trim() ? '#EF444480' : colors.textMuted}
             value={title}
             onChangeText={setTitle}
           />
@@ -1628,34 +1682,42 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => {
-            if (!isFormTimeValid) {
-              const err = !startValidation.valid
-                ? startValidation.error
-                : invalidCustomPost
-                ? `Post "${getFirst5Words(invalidCustomPost.caption)}": ${
-                    validateScheduledDateTime(
-                      invalidCustomPost.scheduledDate,
-                      invalidCustomPost.scheduledTime
-                    ).error
-                  }`
-                : 'Please select a time at least 10 minutes in the future.';
-              Alert.alert('Cannot Save Container', err);
+            if (!isFormReady) {
+              Alert.alert('Cannot Save Container', formValidation.error);
               return;
             }
             handleSaveContainer();
           }}
           style={[
             styles.saveBtn,
-            { backgroundColor: isFormTimeValid ? colors.primary : '#EF4444' },
+            {
+              backgroundColor: isFormReady
+                ? colors.primary
+                : formValidation.errorType === 'title'
+                ? '#DC2626'
+                : formValidation.errorType === 'media'
+                ? '#EA580C'
+                : formValidation.errorType === 'descriptions'
+                ? '#7C3AED'
+                : formValidation.errorType === 'posts'
+                ? '#0284C7'
+                : '#EF4444',
+              borderWidth: isFormReady ? 0 : 2,
+              borderColor: 'rgba(255,255,255,0.35)',
+            },
           ]}
         >
-          {isFormTimeValid ? <Check size={18} color="#FFFFFF" /> : <AlertCircle size={18} color="#FFFFFF" />}
-          <Text style={styles.saveBtnText}>
-            {isFormTimeValid
+          {isFormReady ? (
+            <Check size={18} color="#FFFFFF" />
+          ) : (
+            <AlertCircle size={18} color="#FFFFFF" />
+          )}
+          <Text style={styles.saveBtnText} numberOfLines={1}>
+            {isFormReady
               ? existingContainer
-                ? 'Save Container'
-                : 'Create & Save Container'
-              : 'Fix Time (Min 10 mins in future)'}
+                ? '✓  Save Container'
+                : '✓  Create & Save Container'
+              : formValidation.error}
           </Text>
         </TouchableOpacity>
       </ScrollView>

@@ -318,6 +318,43 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     return newPost;
   },
 
+  addPostsBatch: async (newPosts: Post[]) => {
+    if (!newPosts || newPosts.length === 0) return;
+    try {
+      const db = await getDatabase();
+      for (const p of newPosts) {
+        await db.runAsync(
+          `INSERT INTO posts (id, campaignId, caption, firstComment, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            p.id,
+            p.campaignId,
+            p.caption,
+            p.firstComment || null,
+            JSON.stringify(p.images || []),
+            JSON.stringify(p.videos || []),
+            JSON.stringify(p.platforms || []),
+            p.scheduledAt,
+            p.status || 'scheduled',
+            p.notes || '',
+            p.failureReason || null,
+            p.uploadProgress || 0,
+            JSON.stringify(p.tags || []),
+            p.createdAt || new Date().toISOString(),
+            p.updatedAt || new Date().toISOString(),
+          ]
+        );
+      }
+    } catch (e) {
+      console.warn('DB insert post batch fallback:', e);
+    }
+
+    set((state) => {
+      const newIds = new Set(newPosts.map((p) => p.id));
+      return { posts: [...state.posts.filter((p) => !newIds.has(p.id)), ...newPosts] };
+    });
+  },
+
   updatePost: async (id, updates) => {
     const current = get().posts.find((p) => p.id === id);
     if (!current) return;
