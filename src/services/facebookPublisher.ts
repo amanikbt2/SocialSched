@@ -145,6 +145,41 @@ export async function fetchMetaScheduledPosts(
   }
 }
 
+export interface MetaPublishedPost {
+  id: string;
+  message?: string;
+  created_time?: string;
+  full_picture?: string;
+  permalink_url?: string;
+}
+
+/**
+ * Fetches published feed posts directly from Meta Graph API
+ */
+export async function fetchMetaPublishedPosts(
+  accessToken: string,
+  pageId?: string
+): Promise<MetaPublishedPost[]> {
+  const cleanToken = accessToken ? accessToken.trim() : '';
+  if (!cleanToken) return [];
+
+  const targetId = pageId && pageId !== 'me' ? pageId : 'me';
+  const url = `https://graph.facebook.com/v19.0/${targetId}/feed?fields=id,message,created_time,full_picture,permalink_url&limit=100&access_token=${encodeURIComponent(cleanToken)}`;
+
+  try {
+    const res = await fetch(url).catch(() => null);
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Returns true if this URI is a local device/computer path that can't be fetched by the browser.
  * e.g. C:\Users\... or /storage/emulated/... on Windows/Android web.
@@ -513,28 +548,56 @@ export async function publishToFacebook(
  */
 export async function deleteMetaScheduledPost(
   accessToken: string,
-  postId: string
+  postId: string,
+  pageId?: string
 ): Promise<boolean> {
   const cleanToken = accessToken ? accessToken.trim() : '';
   if (!cleanToken || !postId) return false;
 
-  const url = `https://graph.facebook.com/v19.0/${postId}?access_token=${encodeURIComponent(cleanToken)}`;
+  const cleanPostId = postId.trim();
+  const targetId = pageId && pageId !== 'me' ? pageId : '';
+
+  // 1. Primary Direct DELETE by ID (DELETE https://graph.facebook.com/v19.0/{postId})
+  const primaryUrl = `https://graph.facebook.com/v19.0/${encodeURIComponent(cleanPostId)}?access_token=${encodeURIComponent(cleanToken)}`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(primaryUrl, {
       method: 'DELETE',
     }).catch(() => null);
 
     if (res && res.ok) {
       const data = await res.json().catch(() => null);
-      if (data && (data.success || data.id)) {
-        console.log(`✅ Smartly deleted post ${postId} from Meta server.`);
+      if (data && (data.success === true || data.id || data === true)) {
+        console.log(`✅ Smartly deleted post ${cleanPostId} from Meta server.`);
         return true;
       }
+    } else if (res) {
+      const errData = await res.json().catch(() => null);
+      if (errData && errData.error) {
+        console.warn(`Meta primary delete error for ${cleanPostId}:`, errData.error.message);
+      }
     }
+
+    // 2. Fallback: Composite ID format ({pageId}_{postId}) if targetId exists and postId doesn't already contain underscore
+    if (targetId && !cleanPostId.includes('_')) {
+      const compositeId = `${targetId}_${cleanPostId}`;
+      const fallbackUrl = `https://graph.facebook.com/v19.0/${encodeURIComponent(compositeId)}?access_token=${encodeURIComponent(cleanToken)}`;
+      const fbRes = await fetch(fallbackUrl, {
+        method: 'DELETE',
+      }).catch(() => null);
+
+      if (fbRes && fbRes.ok) {
+        const fbData = await fbRes.json().catch(() => null);
+        if (fbData && (fbData.success === true || fbData.id || fbData === true)) {
+          console.log(`✅ Smartly deleted post ${compositeId} from Meta server (fallback).`);
+          return true;
+        }
+      }
+    }
+
     return false;
   } catch (err) {
-    console.warn(`Failed to delete scheduled post ${postId} from Meta server:`, err);
+    console.warn(`Failed to delete scheduled post ${cleanPostId} from Meta server:`, err);
     return false;
   }
 }

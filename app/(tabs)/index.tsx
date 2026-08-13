@@ -16,6 +16,7 @@ import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
 import { fetchMetaScheduledPostsCount, fetchMetaScheduledPosts, deleteMetaScheduledPost, MetaScheduledPost } from '../../src/services/facebookPublisher';
+import { TopReloadProgressBar } from '../../src/components/common/TopReloadProgressBar';
 import { Container, Post } from '../../src/db/types';
 import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react-native';
 
@@ -41,6 +42,7 @@ export default function HomeScreen() {
   const handleDeletePost = (post: Post | MetaScheduledPost) => {
     const isRemote = 'scheduled_publish_time' in post;
     const postTitle = isRemote ? (post as MetaScheduledPost).message || 'Meta Scheduled Post' : (post as Post).caption || 'Scheduled Post';
+    const targetPostId = isRemote ? post.id : ((post as Post).facebookPostId || (post as Post).id);
 
     Alert.alert(
       'Delete Scheduled Post',
@@ -54,10 +56,18 @@ export default function HomeScreen() {
             if (!isRemote) {
               await deletePost((post as Post).id);
             }
+            if (fbAccount?.accessToken && targetPostId) {
+              await deleteMetaScheduledPost(
+                fbAccount.accessToken,
+                targetPostId,
+                fbAccount.pageId || 'me'
+              );
+            }
             if (fbAccount?.accessToken) {
-              await deleteMetaScheduledPost(fbAccount.accessToken, post.id);
-              // Refresh remote list after deletion
-              const updated = await fetchMetaScheduledPosts(fbAccount.accessToken, fbAccount.pageId || 'me');
+              const updated = await fetchMetaScheduledPosts(
+                fbAccount.accessToken,
+                fbAccount.pageId || 'me'
+              );
               setRemoteScheduledPosts(updated);
               setMetaServerScheduledCount(updated.length);
             }
@@ -120,17 +130,19 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <TopReloadProgressBar loading={refreshing} />
       <Header title="SyncFlow" subtitle="Android Batch Scheduler" />
 
       <ScrollView
+        style={{ flex: 1, opacity: refreshing ? 0.55 : 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
+            colors={['#1877F2']}
+            tintColor="#1877F2"
           />
         }
       >
