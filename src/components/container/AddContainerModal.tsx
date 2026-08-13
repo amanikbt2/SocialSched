@@ -10,6 +10,7 @@ import {
   Image,
   Alert,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { AnimatedSheet } from '../common/AnimatedSheet';
 import { useThemeStore } from '../../stores/useThemeStore';
@@ -54,6 +55,7 @@ import {
   AlertCircle,
   Repeat,
   MessageSquare,
+  RotateCcw,
 } from 'lucide-react-native';
 import { platformColors } from '../../theme/colors';
 
@@ -233,6 +235,31 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 
   const handleRemoveMediaFromPool = (index: number) => {
     setLoopMediaPool(loopMediaPool.filter((_, idx) => idx !== index));
+  };
+
+  // Pull Down Refresh / Clean Form handler
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  const handleResetForm = () => {
+    setRefreshing(true);
+    setTitle('');
+    setLoopDescriptions([]);
+    setLoopMediaPool([]);
+    setPersistentMediaPool([]);
+    setPosts([]);
+    setMediaPerPost(1);
+    setStartDate(getTodayISO());
+    setStartTime(getFutureTimeString(30));
+    setHasEndDateLimit(false);
+    setEndDate(getTomorrowISO());
+    setEndTime('23:59');
+    setSkipTimeRanges([]);
+    setEnableFirstComment(false);
+    setFirstComment('');
+    setTimeout(() => {
+      setRefreshing(false);
+      Alert.alert('✨ Container Cleared', 'Container form has been refreshed & reset to empty defaults.');
+    }, 350);
   };
 
   // Draft Posts inside container

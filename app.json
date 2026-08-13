@@ -2,6 +2,7 @@
   "expo": {
     "name": "SyncFlow",
     "slug": "syncflow",
+    "owner": "sliver1",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -28,6 +29,11 @@
       "bundler": "metro",
       "output": "single",
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8b189666-7fbf-45f3-8065-5186a0eb20d8"
+      }
     }
   }
 }
