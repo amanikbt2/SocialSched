@@ -34,7 +34,7 @@ export const AnimatedSheet: React.FC<AnimatedSheetProps> = ({
         <View
           style={[
             styles.sheetContainer,
-            fullScreen ? styles.fullScreenContainer : null,
+            fullScreen ? styles.fullScreenContainer : { height: '75%', maxHeight: '85%' },
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
         >
@@ -59,7 +59,7 @@ export const AnimatedSheet: React.FC<AnimatedSheetProps> = ({
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.content, fullScreen ? { flex: 1 } : { flexShrink: 1 }]}>
+          <View style={[styles.content, { flex: 1, minHeight: 0 }]}>
             {children}
           </View>
         </View>

@@ -239,7 +239,7 @@ export default function HomeScreen() {
             title="Meta Server Scheduled Posts"
             subtitle={`Showing ${displayList.length} posts uploaded & queued for auto-publishing`}
           >
-            <ScrollView style={styles.popupListContent} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.popupListContent} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={true}>
               {displayList.length > 0 ? (
                 displayList.map((item, idx) => {
                   const isRemote = 'scheduled_publish_time' in item;
@@ -447,7 +447,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   popupListContent: {
-    maxHeight: 400,
+    flex: 1,
+    width: '100%',
     marginTop: 10,
   },
   scheduledItemRow: {
