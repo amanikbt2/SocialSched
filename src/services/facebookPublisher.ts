@@ -99,6 +99,14 @@ export async function validateFacebookToken(token: string): Promise<FacebookAcco
   }
 }
 
+export interface MetaScheduledPost {
+  id: string;
+  message?: string;
+  created_time?: string;
+  scheduled_publish_time?: number;
+  full_picture?: string;
+}
+
 /**
  * Fetches scheduled posts directly from Meta Graph API for verification & count badge
  */
@@ -106,23 +114,34 @@ export async function fetchMetaScheduledPostsCount(
   accessToken: string,
   pageId?: string
 ): Promise<number> {
+  const posts = await fetchMetaScheduledPosts(accessToken, pageId);
+  return posts.length;
+}
+
+/**
+ * Fetches full array of scheduled posts directly from Meta Graph API
+ */
+export async function fetchMetaScheduledPosts(
+  accessToken: string,
+  pageId?: string
+): Promise<MetaScheduledPost[]> {
   const cleanToken = accessToken ? accessToken.trim() : '';
-  if (!cleanToken) return 0;
+  if (!cleanToken) return [];
 
   const targetId = pageId && pageId !== 'me' ? pageId : 'me';
-  const url = `https://graph.facebook.com/v19.0/${targetId}/scheduled_posts?access_token=${encodeURIComponent(cleanToken)}`;
+  const url = `https://graph.facebook.com/v19.0/${targetId}/scheduled_posts?fields=id,message,created_time,scheduled_publish_time,full_picture&access_token=${encodeURIComponent(cleanToken)}`;
 
   try {
     const res = await fetch(url).catch(() => null);
     if (res && res.ok) {
       const data = await res.json().catch(() => null);
       if (data && Array.isArray(data.data)) {
-        return data.data.length;
+        return data.data;
       }
     }
-    return 0;
+    return [];
   } catch {
-    return 0;
+    return [];
   }
 }
 

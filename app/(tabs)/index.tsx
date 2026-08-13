@@ -15,7 +15,7 @@ import { AnimatedSheet } from '../../src/components/common/AnimatedSheet';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
-import { fetchMetaScheduledPostsCount, deleteMetaScheduledPost } from '../../src/services/facebookPublisher';
+import { fetchMetaScheduledPostsCount, fetchMetaScheduledPosts, deleteMetaScheduledPost, MetaScheduledPost } from '../../src/services/facebookPublisher';
 import { Container, Post } from '../../src/db/types';
 import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react-native';
 
@@ -27,29 +27,39 @@ export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingContainer, setEditingContainer] = useState<Container | null>(null);
   const [metaServerScheduledCount, setMetaServerScheduledCount] = useState<number | null>(null);
+  const [remoteScheduledPosts, setRemoteScheduledPosts] = useState<MetaScheduledPost[]>([]);
   const [scheduledPopupVisible, setScheduledPopupVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const fbAccount = accounts.find((a) => a.platform === 'facebook' && a.isConnected);
 
-  // Scheduled / Waiting posts list for popup verification
-  const scheduledPosts = posts.filter(
+  // Scheduled / Waiting posts list for popup verification fallback
+  const localScheduledPosts = posts.filter(
     (p) => p.status === 'scheduled' || p.status === 'waiting'
   );
 
-  const handleDeletePost = (post: Post) => {
+  const handleDeletePost = (post: Post | MetaScheduledPost) => {
+    const isRemote = 'scheduled_publish_time' in post;
+    const postTitle = isRemote ? (post as MetaScheduledPost).message || 'Meta Scheduled Post' : (post as Post).caption || 'Scheduled Post';
+
     Alert.alert(
       'Delete Scheduled Post',
-      'Are you sure you want to delete this scheduled post from container and cancel it on Meta server?',
+      `Are you sure you want to delete "${postTitle.substring(0, 30)}..." and cancel it on Meta server?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete & Remove',
           style: 'destructive',
           onPress: async () => {
-            await deletePost(post.id);
+            if (!isRemote) {
+              await deletePost((post as Post).id);
+            }
             if (fbAccount?.accessToken) {
               await deleteMetaScheduledPost(fbAccount.accessToken, post.id);
+              // Refresh remote list after deletion
+              const updated = await fetchMetaScheduledPosts(fbAccount.accessToken, fbAccount.pageId || 'me');
+              setRemoteScheduledPosts(updated);
+              setMetaServerScheduledCount(updated.length);
             }
           },
         },
@@ -63,25 +73,27 @@ export default function HomeScreen() {
     await loadSavedAccounts();
 
     if (fbAccount && fbAccount.accessToken && fbAccount.isConnected) {
-      const count = await fetchMetaScheduledPostsCount(
+      const fetchedMeta = await fetchMetaScheduledPosts(
         fbAccount.accessToken,
         fbAccount.pageId || 'me'
       );
-      setMetaServerScheduledCount(Math.max(count, scheduledPosts.length));
+      setRemoteScheduledPosts(fetchedMeta);
+      setMetaServerScheduledCount(Math.max(fetchedMeta.length, localScheduledPosts.length));
     }
     setRefreshing(false);
-  }, [fbAccount?.accessToken, fbAccount?.isConnected, fbAccount?.pageId, loadData, loadSavedAccounts, scheduledPosts.length]);
+  }, [fbAccount?.accessToken, fbAccount?.isConnected, fbAccount?.pageId, loadData, loadSavedAccounts, localScheduledPosts.length]);
 
   // Fetch live scheduled posts directly from Meta Graph API with instant local fallback
   useEffect(() => {
     let isMounted = true;
-    const localScheduledCount = scheduledPosts.length;
+    const localScheduledCount = localScheduledPosts.length;
 
     if (fbAccount && fbAccount.accessToken && fbAccount.isConnected) {
-      fetchMetaScheduledPostsCount(fbAccount.accessToken, fbAccount.pageId || 'me')
-        .then((count) => {
+      fetchMetaScheduledPosts(fbAccount.accessToken, fbAccount.pageId || 'me')
+        .then((fetchedMeta) => {
           if (isMounted) {
-            setMetaServerScheduledCount(Math.max(count, localScheduledCount));
+            setRemoteScheduledPosts(fetchedMeta);
+            setMetaServerScheduledCount(Math.max(fetchedMeta.length, localScheduledCount));
           }
         })
         .catch(() => {
@@ -218,92 +230,99 @@ export default function HomeScreen() {
       />
 
       {/* POPUP LIST MODAL FOR SCHEDULED POSTS */}
-      <AnimatedSheet
-        visible={scheduledPopupVisible}
-        onClose={() => setScheduledPopupVisible(false)}
-        title="Meta Server Scheduled Posts"
-        subtitle={`Showing ${scheduledPosts.length} posts uploaded & queued for auto-publishing`}
-      >
-        <ScrollView style={styles.popupListContent} showsVerticalScrollIndicator={false}>
-          {scheduledPosts.length > 0 ? (
-            scheduledPosts.map((post, idx) => {
-              const parentCampaign = campaigns.find((c) => c.id === post.campaignId);
-              const isPastOrPublished =
-                post.status === 'published' || Date.parse(post.scheduledAt) <= Date.now();
-              const formattedDate = new Date(post.scheduledAt).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              });
+      {(() => {
+        const displayList = remoteScheduledPosts.length > 0 ? remoteScheduledPosts : localScheduledPosts;
+        return (
+          <AnimatedSheet
+            visible={scheduledPopupVisible}
+            onClose={() => setScheduledPopupVisible(false)}
+            title="Meta Server Scheduled Posts"
+            subtitle={`Showing ${displayList.length} posts uploaded & queued for auto-publishing`}
+          >
+            <ScrollView style={styles.popupListContent} showsVerticalScrollIndicator={false}>
+              {displayList.length > 0 ? (
+                displayList.map((item, idx) => {
+                  const isRemote = 'scheduled_publish_time' in item;
+                  const remoteItem = item as MetaScheduledPost;
+                  const localItem = item as Post;
 
-              return (
-                <View
-                  key={post.id}
-                  style={[
-                    styles.scheduledItemRow,
-                    { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
-                  ]}
-                >
-                  <View style={[styles.itemNumBadge, { backgroundColor: colors.primaryContainer }]}>
-                    <Text style={[styles.itemNumText, { color: colors.primary }]}>#{idx + 1}</Text>
-                  </View>
+                  const captionText = isRemote
+                    ? remoteItem.message || 'Meta Scheduled Post (Media)'
+                    : localItem.caption || 'Scheduled Post';
 
-                  <View style={styles.itemTextCol}>
-                    <Text
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                      style={[styles.itemCaptionText, { color: colors.textPrimary }]}
+                  const scheduledTimestamp = isRemote
+                    ? (remoteItem.scheduled_publish_time ? remoteItem.scheduled_publish_time * 1000 : Date.now())
+                    : Date.parse(localItem.scheduledAt || '');
+
+                  const formattedDate = new Date(scheduledTimestamp).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  const parentCampaign = !isRemote && localItem.campaignId
+                    ? campaigns.find((c) => c.id === localItem.campaignId)
+                    : null;
+
+                  return (
+                    <View
+                      key={item.id}
+                      style={[
+                        styles.scheduledItemRow,
+                        { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+                      ]}
                     >
-                      {post.caption && post.caption.trim() !== ''
-                        ? post.caption
-                        : 'Media post without caption...'}
-                    </Text>
+                      <View style={[styles.itemNumBadge, { backgroundColor: colors.primaryContainer }]}>
+                        <Text style={[styles.itemNumText, { color: colors.primary }]}>#{idx + 1}</Text>
+                      </View>
 
-                    <Text style={[styles.itemMetaSub, { color: colors.textSecondary }]}>
-                      📁 {parentCampaign?.title || 'Batch Container'}
-                    </Text>
-                  </View>
+                      <View style={styles.itemTextCol}>
+                        <Text
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                          style={[styles.itemCaptionText, { color: colors.textPrimary }]}
+                        >
+                          {captionText}
+                        </Text>
 
-                  {isPastOrPublished ? (
-                    <View style={[styles.itemTimePill, { backgroundColor: '#10B98118', borderColor: '#10B981', borderWidth: 1 }]}>
-                      <CheckCircle2 size={11} color="#10B981" />
-                      <Text style={[styles.itemTimeText, { color: '#10B981', fontWeight: '800' }]}>
-                        Published ✔
-                      </Text>
+                        <Text style={[styles.itemMetaSub, { color: colors.textSecondary }]}>
+                          📁 {parentCampaign?.title || 'Meta Server Queued'}
+                        </Text>
+                      </View>
+
+                      <View style={[styles.itemTimePill, { backgroundColor: colors.primaryContainer }]}>
+                        <Clock size={10} color={colors.primary} />
+                        <Text style={[styles.itemTimeText, { color: colors.primary }]}>
+                          {formattedDate}
+                        </Text>
+                        <Globe size={10} color={colors.success} />
+                      </View>
+
+                      {/* SMART TRASH DELETE BUTTON */}
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => handleDeletePost(item)}
+                        style={styles.itemTrashBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
-                  ) : (
-                    <View style={[styles.itemTimePill, { backgroundColor: colors.primaryContainer }]}>
-                      <Clock size={10} color={colors.primary} />
-                      <Text style={[styles.itemTimeText, { color: colors.primary }]}>
-                        {formattedDate}
-                      </Text>
-                      <Globe size={10} color={colors.success} />
-                    </View>
-                  )}
-
-                  {/* SMART TRASH DELETE BUTTON */}
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => handleDeletePost(post)}
-                    style={styles.itemTrashBtn}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Trash2 size={15} color="#EF4444" />
-                  </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={styles.emptyPopupBox}>
+                  <Globe size={32} color={colors.textSecondary} />
+                  <Text style={[styles.emptyPopupText, { color: colors.textSecondary }]}>
+                    No scheduled posts found. Create a container to schedule posts directly on Meta servers!
+                  </Text>
                 </View>
-              );
-            })
-          ) : (
-            <View style={styles.emptyPopupBox}>
-              <Globe size={32} color={colors.textSecondary} />
-              <Text style={[styles.emptyPopupText, { color: colors.textSecondary }]}>
-                No scheduled posts found. Create a container to schedule posts directly on Meta servers!
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      </AnimatedSheet>
+              )}
+            </ScrollView>
+          </AnimatedSheet>
+        );
+      })()}
     </View>
   );
 }
