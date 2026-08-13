@@ -338,15 +338,9 @@ export async function publishToFacebook(
 
   // Meta Graph API requirement: scheduled_publish_time MUST be >= 10 minutes in future!
   // If diffInMinutes >= 10, schedule for exact future timestamp on Meta servers.
-  // If diffInMinutes < 10 but > 0, set to (now + 11 mins). If post is due or in past (diffInMinutes <= 0), publish live (published: true).
-  let isMetaFutureSchedule = diffInMinutes > 0;
+  // If diffInMinutes < 10 (short interval or due now), publish LIVE immediately (published: true) when due without Meta server scheduling.
+  let isMetaFutureSchedule = diffInMinutes >= 10;
   let publishTimestamp = Math.floor(scheduledDate.getTime() / 1000);
-
-  if (isMetaFutureSchedule && diffInMinutes < 10) {
-    const safeFutureDate = new Date(now.getTime() + 11 * 60 * 1000);
-    publishTimestamp = Math.floor(safeFutureDate.getTime() / 1000);
-    console.log(`ℹ️ Auto-shifted Meta schedule timestamp to ${safeFutureDate.toLocaleTimeString()} to satisfy Meta's 10-min rule.`);
-  }
 
   console.log(
     `🚀 Meta Graph API: Uploading post to Meta target [${targetId}]... ` +

@@ -35,6 +35,7 @@ interface CampaignState {
   triggerNextLoop: (containerId: string) => Promise<void>;
   addMediaToLoopPool: (containerId: string, newUris: string[]) => Promise<void>;
   clearScheduledPostsForCampaign: (campaignId: string) => Promise<void>;
+  smartDeleteLoopPosts: (containerId: string, postIds: string[]) => Promise<{ deleted: number; reclaimed: number }>;
 }
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
@@ -414,6 +415,65 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     set((state) => ({
       posts: state.posts.filter((p) => !(p.campaignId === campaignId && (p.status === 'scheduled' || p.status === 'waiting'))),
     }));
+  },
+
+  // Smart loop deletion: safely removes ONLY unpublished posts and reclaims
+  // their media URIs back from usedMediaUris so the loop can reuse them.
+  smartDeleteLoopPosts: async (containerId: string, postIds: string[]) => {
+    const state = get();
+    const container = state.campaigns.find((c) => c.id === containerId);
+    if (!container) return { deleted: 0, reclaimed: 0 };
+
+    // Identify which posts are actually deletable (not yet published)
+    const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
+    const postsToDelete = state.posts.filter(
+      (p) => postIds.includes(p.id) && DELETABLE_STATUSES.includes(p.status)
+    );
+
+    if (postsToDelete.length === 0) return { deleted: 0, reclaimed: 0 };
+
+    const deletedIds = postsToDelete.map((p) => p.id);
+
+    // Collect all media URIs used by these posts so we can return them to available pool
+    const reclaimedUris = new Set<string>();
+    for (const post of postsToDelete) {
+      for (const uri of (post.images || [])) {
+        reclaimedUris.add(uri);
+      }
+    }
+
+    // Remove from DB
+    try {
+      const db = await getDatabase();
+      const placeholders = deletedIds.map(() => '?').join(',');
+      await db.runAsync(`DELETE FROM posts WHERE id IN (${placeholders});`, deletedIds);
+    } catch (e) {
+      console.warn('[smartDeleteLoopPosts] DB delete fallback:', e);
+    }
+
+    // Update in-memory posts
+    set((st) => ({
+      posts: st.posts.filter((p) => !deletedIds.includes(p.id)),
+    }));
+
+    // Reclaim media URIs from the container's usedMediaUris
+    // so they are eligible to be picked again in future loop rounds
+    if (container.isLoopContainer && reclaimedUris.size > 0) {
+      const currentUsed: string[] = container.usedMediaUris || [];
+      const updatedUsed = currentUsed.filter((uri) => !reclaimedUris.has(uri));
+      const loopPool = container.loopMediaPool || [];
+      const remainingUnused = loopPool.filter((uri) => !updatedUsed.includes(uri)).length;
+      const mediaPerPost = Math.max(1, container.mediaPerPost || 1);
+      const nowHasMedia = remainingUnused >= mediaPerPost;
+
+      await get().updateCampaign(containerId, {
+        usedMediaUris: updatedUsed,
+        // Reopen loop if it was previously marked completed and we just freed media
+        isLoopCompleted: nowHasMedia ? false : container.isLoopCompleted,
+      });
+    }
+
+    return { deleted: deletedIds.length, reclaimed: reclaimedUris.size };
   },
 
   duplicatePost: async (id) => {

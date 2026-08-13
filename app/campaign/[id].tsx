@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,15 @@ import {
   Image,
   RefreshControl,
   Alert,
+  Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
 import { useQueueStore } from '../../src/stores/useQueueStore';
+import { triggerInstantPublish } from '../../src/services/queueEngine';
 import { getContainerStatusInfo } from '../../src/utils/containerStatusHelper';
 import { deleteMetaScheduledPost } from '../../src/services/facebookPublisher';
 import { Post } from '../../src/db/types';
@@ -51,17 +54,48 @@ export default function ContainerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const colors = useThemeStore((state) => state.colors);
-  const { campaigns, posts, toggleCampaignPause, triggerNextLoop, addMediaToLoopPool, loadData, deletePost, updatePost } = useCampaignStore();
+  const { campaigns, posts, toggleCampaignPause, triggerNextLoop, addMediaToLoopPool, loadData, deletePost, updatePost, smartDeleteLoopPosts } = useCampaignStore();
   const networkStatus = useQueueStore((state) => state.networkStatus);
   const activePostId = useQueueStore((state) => state.activePostId);
 
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Multi-Select Checkboxes state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+
+  // Force Re-queue: tracks which post IDs are currently being force-processed
+  const [forcingPostIds, setForcingPostIds] = useState<string[]>([]);
+
+  // Spin animation for uploading/forcing indicators
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 900,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, [spinAnim]);
+  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  const handleForceRequeue = useCallback(async (postId: string) => {
+    if (forcingPostIds.includes(postId)) return;
+    setForcingPostIds((prev) => [...prev, postId]);
+    try {
+      const result = await triggerInstantPublish(postId);
+      if (!result.success && result.error) {
+        Alert.alert('Queue Error', result.error);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Something went wrong.');
+    } finally {
+      setForcingPostIds((prev) => prev.filter((id) => id !== postId));
+    }
+  }, [forcingPostIds]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -96,6 +130,14 @@ export default function ContainerDetailScreen() {
   }
 
   const toggleSelectPost = (postId: string) => {
+    if (container?.isLoopContainer) {
+      const targetPost = containerPosts.find((p) => p.id === postId);
+      if (targetPost && !DELETABLE_STATUSES.includes(targetPost.status)) {
+        Alert.alert('Protected Post', 'This post is already published and cannot be selected for removal.');
+        return;
+      }
+    }
+
     if (selectedPostIds.includes(postId)) {
       setSelectedPostIds(selectedPostIds.filter((pid) => pid !== postId));
     } else {
@@ -103,28 +145,61 @@ export default function ContainerDetailScreen() {
     }
   };
 
+  const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
+
   const toggleSelectAll = () => {
-    if (selectedPostIds.length === containerPosts.length) {
-      setSelectedPostIds([]);
+    if (container?.isLoopContainer) {
+      // For loop containers: Select All only picks unpublished (safe-to-delete) posts
+      const deletable = containerPosts.filter((p) => DELETABLE_STATUSES.includes(p.status));
+      const allDeletableSelected = deletable.every((p) => selectedPostIds.includes(p.id));
+      if (allDeletableSelected && deletable.length > 0) {
+        setSelectedPostIds([]);
+      } else {
+        setSelectedPostIds(deletable.map((p) => p.id));
+      }
     } else {
-      setSelectedPostIds(containerPosts.map((p) => p.id));
+      if (selectedPostIds.length === containerPosts.length) {
+        setSelectedPostIds([]);
+      } else {
+        setSelectedPostIds(containerPosts.map((p) => p.id));
+      }
     }
   };
 
   const handleDeleteSinglePost = (post: Post) => {
+    const isLoop = container?.isLoopContainer;
+    const canDelete = DELETABLE_STATUSES.includes(post.status);
+
+    if (isLoop && !canDelete) {
+      Alert.alert(
+        '⚠️ Cannot Delete',
+        `This post has already been published and cannot be removed.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const loopNote = isLoop
+      ? `\n\n✅ Its media will be freed back into the pool so the loop can reuse it.`
+      : '\n\nThis will also attempt to cancel it on Meta servers.';
+
     Alert.alert(
-      'Delete Post',
-      'Are you sure you want to delete this post from the container and cancel it on Meta server?',
+      isLoop ? 'Remove Loop Post' : 'Delete Post',
+      `Remove this scheduled post?${loopNote}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete Post',
+          text: isLoop ? 'Remove & Reclaim Media' : 'Delete Post',
           style: 'destructive',
           onPress: async () => {
-            await deletePost(post.id);
-            const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
-            if (fbAcc?.accessToken) {
-              await deleteMetaScheduledPost(fbAcc.accessToken, post.id);
+            if (isLoop) {
+              await smartDeleteLoopPosts(container!.id, [post.id]);
+            } else {
+              await deletePost(post.id);
+              const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
+              if (fbAcc?.accessToken) {
+                await deleteMetaScheduledPost(fbAcc.accessToken, post.id);
+              }
             }
           },
         },
@@ -134,28 +209,72 @@ export default function ContainerDetailScreen() {
 
   const handleDeleteSelected = () => {
     if (selectedPostIds.length === 0) return;
-    Alert.alert(
-      'Delete Selected Posts',
-      `Are you sure you want to delete ${selectedPostIds.length} selected post(s)?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
-            for (const pid of selectedPostIds) {
-              await deletePost(pid);
-              if (fbAcc?.accessToken) {
-                await deleteMetaScheduledPost(fbAcc.accessToken, pid);
-              }
-            }
-            setSelectedPostIds([]);
-            setIsMultiSelectMode(false);
+
+    const isLoop = container?.isLoopContainer;
+    if (isLoop) {
+      // Filter to only deletable posts among selected
+      const deletable = containerPosts.filter(
+        (p) => selectedPostIds.includes(p.id) && DELETABLE_STATUSES.includes(p.status)
+      );
+      const publishedSkipped = selectedPostIds.length - deletable.length;
+
+      if (deletable.length === 0) {
+        Alert.alert(
+          '⚠️ Nothing to Remove',
+          'All selected posts have already been published and cannot be deleted.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const skipNote = publishedSkipped > 0
+        ? `\n\n${publishedSkipped} already-published post(s) will be skipped automatically.`
+        : '';
+
+      Alert.alert(
+        'Remove Loop Posts',
+        `Remove ${deletable.length} scheduled/pending post(s)? Their media will be freed back into the pool so the loop can reuse them.${skipNote}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: `Remove ${deletable.length} Post${deletable.length !== 1 ? 's' : ''} & Reclaim Media`,
+            style: 'destructive',
+            onPress: async () => {
+              const result = await smartDeleteLoopPosts(container!.id, deletable.map((p) => p.id));
+              setSelectedPostIds([]);
+              setIsMultiSelectMode(false);
+              Alert.alert(
+                '✅ Done',
+                `Removed ${result.deleted} post(s). ${result.reclaimed} media file(s) returned to the pool.`
+              );
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Delete Selected Posts',
+        `Are you sure you want to delete ${selectedPostIds.length} selected post(s)?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
+              for (const pid of selectedPostIds) {
+                await deletePost(pid);
+                if (fbAcc?.accessToken) {
+                  await deleteMetaScheduledPost(fbAcc.accessToken, pid);
+                }
+              }
+              setSelectedPostIds([]);
+              setIsMultiSelectMode(false);
+            },
+          },
+        ]
+      );
+    }
   };
 
   const scheduledCount = containerPosts.filter(
@@ -215,39 +334,54 @@ export default function ContainerDetailScreen() {
       </View>
 
       {/* Multi-Select Floating Action Bar */}
-      {isMultiSelectMode && (
-        <View style={[styles.multiSelectActionBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={toggleSelectAll}
-            style={styles.selectAllRow}
-          >
-            {selectedPostIds.length === containerPosts.length && containerPosts.length > 0 ? (
-              <CheckSquare size={18} color={colors.primary} />
-            ) : (
-              <Square size={18} color={colors.textSecondary} />
-            )}
-            <Text style={[styles.selectAllText, { color: colors.textPrimary }]}>
-              Select All ({selectedPostIds.length}/{containerPosts.length})
-            </Text>
-          </TouchableOpacity>
+      {isMultiSelectMode && (() => {
+        const deletableCount = containerPosts.filter((p) => DELETABLE_STATUSES.includes(p.status)).length;
+        const totalCount = containerPosts.length;
+        const allDeletableSelected = container.isLoopContainer
+          ? containerPosts.filter((p) => DELETABLE_STATUSES.includes(p.status)).every((p) => selectedPostIds.includes(p.id)) && deletableCount > 0
+          : selectedPostIds.length === totalCount && totalCount > 0;
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={handleDeleteSelected}
-            disabled={selectedPostIds.length === 0}
-            style={[
-              styles.deleteBatchBtn,
-              { backgroundColor: selectedPostIds.length > 0 ? '#EF4444' : colors.border },
-            ]}
-          >
-            <Trash2 size={14} color="#FFFFFF" />
-            <Text style={styles.deleteBatchBtnText}>
-              Delete ({selectedPostIds.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        return (
+          <View style={[styles.multiSelectActionBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={toggleSelectAll}
+              style={styles.selectAllRow}
+            >
+              {allDeletableSelected ? (
+                <CheckSquare size={18} color={colors.primary} />
+              ) : (
+                <Square size={18} color={colors.textSecondary} />
+              )}
+              <View>
+                <Text style={[styles.selectAllText, { color: colors.textPrimary }]}>
+                  {container.isLoopContainer ? 'Select Unpublished' : 'Select All'} ({selectedPostIds.length}/{container.isLoopContainer ? deletableCount : totalCount})
+                </Text>
+                {container.isLoopContainer && (
+                  <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 1 }}>
+                    Published posts are protected
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handleDeleteSelected}
+              disabled={selectedPostIds.length === 0}
+              style={[
+                styles.deleteBatchBtn,
+                { backgroundColor: selectedPostIds.length > 0 ? '#EF4444' : colors.border },
+              ]}
+            >
+              <Trash2 size={14} color="#FFFFFF" />
+              <Text style={styles.deleteBatchBtnText}>
+                {container.isLoopContainer ? 'Remove & Reclaim' : 'Delete'} ({selectedPostIds.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -413,6 +547,15 @@ export default function ContainerDetailScreen() {
           const isFailedOrConnectionIssue = post.status === 'failed' || post.status === 'missed';
           const isPastOrPublished =
             !isFailedOrConnectionIssue && (post.status === 'published' || Date.parse(post.scheduledAt) <= Date.now());
+          const isUploading = post.status === 'uploading' || post.id === activePostId;
+          const isForcing = forcingPostIds.includes(post.id);
+          const isActive = isUploading || isForcing;
+          // A post is "stuck" if it's scheduled/waiting/paused but NOT currently active
+          const isStuck =
+            !isActive &&
+            !isFailedOrConnectionIssue &&
+            !isPastOrPublished &&
+            (post.status === 'scheduled' || post.status === 'waiting' || post.status === 'paused');
           const formattedSchedule = new Date(post.scheduledAt).toLocaleString([], {
             month: 'short',
             day: 'numeric',
@@ -427,8 +570,14 @@ export default function ContainerDetailScreen() {
                 styles.postCard,
                 {
                   backgroundColor: isSelected ? colors.primaryContainer + '30' : colors.surface,
-                  borderColor: isSelected ? colors.primary : isFailedOrConnectionIssue ? '#EF4444' : colors.border,
-                  borderWidth: isSelected || isFailedOrConnectionIssue ? 1.5 : 1,
+                  borderColor: isSelected
+                    ? colors.primary
+                    : isActive
+                    ? colors.warning + 'AA'
+                    : isFailedOrConnectionIssue
+                    ? '#EF4444'
+                    : colors.border,
+                  borderWidth: isSelected || isFailedOrConnectionIssue || isActive ? 1.5 : 1,
                 },
               ]}
             >
@@ -447,16 +596,22 @@ export default function ContainerDetailScreen() {
                 <View style={styles.minimizedLeft}>
                   {/* Multi-Select Checkbox */}
                   {isMultiSelectMode ? (
-                    <TouchableOpacity
-                      onPress={() => toggleSelectPost(post.id)}
-                      style={{ marginRight: 8 }}
-                    >
-                      {isSelected ? (
-                        <CheckSquare size={20} color={colors.primary} />
-                      ) : (
-                        <Square size={20} color={colors.textSecondary} />
-                      )}
-                    </TouchableOpacity>
+                    container?.isLoopContainer && !DELETABLE_STATUSES.includes(post.status) ? (
+                      <View style={{ marginRight: 8, opacity: 0.6 }}>
+                        <CheckCircle2 size={18} color={colors.success} />
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => toggleSelectPost(post.id)}
+                        style={{ marginRight: 8 }}
+                      >
+                        {isSelected ? (
+                          <CheckSquare size={20} color={colors.primary} />
+                        ) : (
+                          <Square size={20} color={colors.textSecondary} />
+                        )}
+                      </TouchableOpacity>
+                    )
                   ) : (
                     <View style={[styles.numBadge, { backgroundColor: colors.primaryContainer }]}>
                       <Text style={[styles.numBadgeText, { color: colors.primary }]}>#{index + 1}</Text>
@@ -501,23 +656,48 @@ export default function ContainerDetailScreen() {
                       📷 {post.images.length}
                     </Text>
                   )}
-                  {!isMultiSelectMode && (
+
+                  {/* Force Re-queue button for stuck posts */}
+                  {!isMultiSelectMode && isStuck && (
                     <TouchableOpacity
                       activeOpacity={0.7}
                       onPress={(e) => {
                         e.stopPropagation && e.stopPropagation();
-                        handleDeleteSinglePost(post);
+                        handleForceRequeue(post.id);
                       }}
-                      style={styles.postTrashIconBtn}
+                      style={styles.forceQueueBtn}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Trash2 size={15} color="#EF4444" />
+                      <RefreshCw size={13} color={colors.warning} />
                     </TouchableOpacity>
                   )}
-                  {isExpanded ? (
-                    <ChevronUp size={18} color={colors.textSecondary} />
+
+                  {/* Spinning upload indicator */}
+                  {isActive ? (
+                    <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                      <ActivityIndicator size={16} color={colors.warning} />
+                    </Animated.View>
                   ) : (
-                    <ChevronDown size={18} color={colors.textSecondary} />
+                    <>
+                      {!isMultiSelectMode && (
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={(e) => {
+                            e.stopPropagation && e.stopPropagation();
+                            handleDeleteSinglePost(post);
+                          }}
+                          style={styles.postTrashIconBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Trash2 size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
+                      {isExpanded ? (
+                        <ChevronUp size={18} color={colors.textSecondary} />
+                      ) : (
+                        <ChevronDown size={18} color={colors.textSecondary} />
+                      )}
+                    </>
                   )}
                 </View>
               </TouchableOpacity>
@@ -610,14 +790,16 @@ export default function ContainerDetailScreen() {
                       </Text>
                     </View>
 
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleDeleteSinglePost(post)}
-                      style={[styles.expandedDeleteBtn, { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }]}
-                    >
-                      <Trash2 size={12} color="#EF4444" />
-                      <Text style={[styles.expandedDeleteBtnText, { color: '#EF4444' }]}>Delete</Text>
-                    </TouchableOpacity>
+                    {(!container?.isLoopContainer || DELETABLE_STATUSES.includes(post.status)) && (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => handleDeleteSinglePost(post)}
+                        style={[styles.expandedDeleteBtn, { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }]}
+                      >
+                        <Trash2 size={12} color="#EF4444" />
+                        <Text style={[styles.expandedDeleteBtnText, { color: '#EF4444' }]}>Delete</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               )}
@@ -1027,6 +1209,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 4,
+  },
+  forceQueueBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F59E0B18',
+    borderWidth: 1,
+    borderColor: '#F59E0B55',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 2,
   },
   scheduleInfoLeft: {
     flexDirection: 'row',
