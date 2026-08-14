@@ -262,15 +262,31 @@ async function uploadSinglePhotoToMeta(
         const response = await fetch(imageUri).catch(() => null);
         if (response && response.ok) {
           const blob = await response.blob();
-          (formData as any).append('source', blob, 'photo.jpg');
+          const ext = blob.type.split('/')[1] || 'jpg';
+          (formData as any).append('source', blob, `photo.${ext}`);
         } else {
           return null; // Can't fetch the blob — bail out gracefully
         }
       } else {
+        let type = 'image/jpeg';
+        let ext = 'jpg';
+        if (imageUri.startsWith('data:')) {
+          const match = imageUri.match(/^data:([^;]+);/);
+          if (match) {
+            type = match[1];
+            ext = type.split('/')[1] || 'jpg';
+          }
+        } else {
+          const parsedExt = imageUri.split('.').pop()?.split('?')[0]?.toLowerCase();
+          if (parsedExt && ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'tiff'].includes(parsedExt)) {
+            ext = parsedExt;
+            type = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+          }
+        }
         formData.append('source', {
           uri: imageUri,
-          type: 'image/jpeg',
-          name: 'photo.jpg',
+          type: type,
+          name: `photo.${ext}`,
         } as any);
       }
 
@@ -287,29 +303,6 @@ async function uploadSinglePhotoToMeta(
       console.warn('Binary photo upload exception:', e);
     }
   }
-
-  // 3. Fallback if local blob reading failed
-  try {
-    const fallbackUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60';
-    const payload: any = {
-      url: fallbackUrl,
-      published,
-      access_token: accessToken,
-    };
-    if (caption) payload.caption = caption;
-    if (scheduledTime && !published) payload.scheduled_publish_time = scheduledTime;
-
-    const res = await fetch(photoUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch(() => null);
-
-    if (res && res.ok) {
-      const data = await res.json().catch(() => null);
-      return data?.id || data?.post_id || null;
-    }
-  } catch (e) {}
 
   return null;
 }
@@ -482,7 +475,8 @@ export async function publishToFacebook(
   }
 
   // 3. Primary Text Feed Post Publishing ({targetId}/feed)
-  if (!createdPostId) {
+  const hasImages = post.images && post.images.length > 0;
+  if (!createdPostId && !hasImages) {
     const feedUrl = `https://graph.facebook.com/v19.0/${targetId}/feed`;
     const response = await fetch(feedUrl, {
       method: 'POST',
@@ -500,7 +494,7 @@ export async function publishToFacebook(
   }
 
   // 4. Fallback Text Feed Post Publishing (/me/feed)
-  if (!createdPostId) {
+  if (!createdPostId && !hasImages) {
     console.warn('Primary target endpoint rejected. Trying /me/feed endpoint fallback...');
     const meFeedUrl = `https://graph.facebook.com/v19.0/me/feed`;
     const meResponse = await fetch(meFeedUrl, {
@@ -534,6 +528,13 @@ export async function publishToFacebook(
       success: true,
       fbPostId: createdPostId,
       isMetaScheduled: isMetaFutureSchedule,
+    };
+  }
+
+  if (hasImages) {
+    return {
+      success: false,
+      error: 'Failed to upload selected media files to Meta Graph API. Please ensure your Facebook token is active and the images are in a valid format.',
     };
   }
 

@@ -1,7 +1,7 @@
 import { getDatabase } from '../db/database';
 import { Campaign, Post, MediaItem } from '../db/types';
 
-export interface SyncFlowBackup {
+export interface SmartflowBackup {
   version: string;
   exportedAt: string;
   campaigns: Campaign[];
@@ -15,7 +15,7 @@ export async function exportAppDataJSON(): Promise<string> {
   const rawPosts = (await db.getAllAsync('SELECT * FROM posts;')) as any[];
   const rawMedia = (await db.getAllAsync('SELECT * FROM media;')) as any[];
 
-  const backup: SyncFlowBackup = {
+  const backup: SmartflowBackup = {
     version: '1.0.0',
     exportedAt: new Date().toISOString(),
     campaigns: rawCampaigns.map((c) => ({
@@ -78,9 +78,9 @@ export async function exportAppDataJSON(): Promise<string> {
 
 export async function importAppDataJSON(jsonString: string): Promise<boolean> {
   try {
-    const backup: SyncFlowBackup = JSON.parse(jsonString);
+    const backup: SmartflowBackup = JSON.parse(jsonString);
     if (!backup.campaigns || !backup.posts) {
-      throw new Error('Invalid SyncFlow backup schema.');
+      throw new Error('Invalid Smartflow backup schema.');
     }
 
     const db = await getDatabase();

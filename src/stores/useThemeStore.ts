@@ -17,12 +17,12 @@ export const useThemeStore = create<ThemeState>((set) => ({
   setMode: async (mode: ThemeMode) => {
     const isDark = mode === 'dark' ? true : false;
     const colors = isDark ? darkColors : lightColors;
-    await AsyncStorage.setItem('syncflow_theme_mode', mode);
+    await AsyncStorage.setItem('smartflow_theme_mode', mode);
     set({ mode, colors, isDark });
   },
   loadTheme: async () => {
     try {
-      const savedMode = (await AsyncStorage.getItem('syncflow_theme_mode')) as ThemeMode | null;
+      const savedMode = (await AsyncStorage.getItem('smartflow_theme_mode')) as ThemeMode | null;
       if (savedMode) {
         const isDark = savedMode === 'dark' ? true : false;
         set({ mode: savedMode, colors: isDark ? darkColors : lightColors, isDark });

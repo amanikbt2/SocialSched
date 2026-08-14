@@ -3,11 +3,12 @@ export type SocialPlatform = 'facebook' | 'instagram' | 'x' | 'tiktok';
 
 export interface SkipTimeRange {
   id: string;
-  startDate: string;
+  startDate?: string;
   startTime: string;
-  endDate: string;
+  endDate?: string;
   endTime: string;
   label?: string;
+  isRecurring?: boolean;
 }
 
 export interface Campaign {
@@ -64,6 +65,7 @@ export interface Post {
   mentions: string[];
   createdAt: string;
   updatedAt: string;
+  facebookPostId?: string | null;
 }
 
 export interface MediaItem {

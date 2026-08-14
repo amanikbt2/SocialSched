@@ -90,6 +90,13 @@ interface DraftPostItem {
   expanded: boolean;
 }
 
+const getFirst5Words = (text: string) => {
+  if (!text || text.trim() === '') return 'Empty caption post...';
+  const words = text.trim().split(/\s+/);
+  if (words.length <= 5) return words.join(' ');
+  return words.slice(0, 5).join(' ') + '...';
+};
+
 export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   visible,
   onClose,
@@ -145,29 +152,48 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   // Form submission loading state to prevent double-click / multiple creations
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [newSkipLabel, setNewSkipLabel] = useState<string>('');
+  const [newSkipIsRecurring, setNewSkipIsRecurring] = useState<boolean>(false);
   const [newSkipStartDate, setNewSkipStartDate] = useState<string>(getTodayISO());
   const [newSkipStartTime, setNewSkipStartTime] = useState<string>('23:00');
   const [newSkipEndDate, setNewSkipEndDate] = useState<string>(getTomorrowISO());
   const [newSkipEndTime, setNewSkipEndTime] = useState<string>('07:00');
 
   const handleAddSkipTimeRange = () => {
-    const normStartD = smartNormalizeDate(newSkipStartDate) || getTodayISO();
-    const normStartT = smartNormalizeTime(newSkipStartTime) || '23:00';
-    const normEndD = smartNormalizeDate(newSkipEndDate) || getTomorrowISO();
-    const normEndT = smartNormalizeTime(newSkipEndTime) || '07:00';
+    if (newSkipIsRecurring) {
+      const normStartT = smartNormalizeTime(newSkipStartTime) || '23:00';
+      const normEndT = smartNormalizeTime(newSkipEndTime) || '07:00';
 
-    const newRange: SkipTimeRange = {
-      id: 'skip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-      startDate: normStartD,
-      startTime: normStartT,
-      endDate: normEndD,
-      endTime: normEndT,
-      label: newSkipLabel.trim() || `Skip Window #${skipTimeRanges.length + 1}`,
-    };
+      const newRange: SkipTimeRange = {
+        id: 'skip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        startTime: normStartT,
+        endTime: normEndT,
+        label: newSkipLabel.trim() || `Daily: ${normStartT} - ${normEndT}`,
+        isRecurring: true,
+      };
 
-    setSkipTimeRanges([...skipTimeRanges, newRange]);
-    setNewSkipLabel('');
-    Alert.alert('Success', 'Skip time range added successfully!');
+      setSkipTimeRanges([...skipTimeRanges, newRange]);
+      setNewSkipLabel('');
+      Alert.alert('Success', 'Smart Daily Skip range added successfully!');
+    } else {
+      const normStartD = smartNormalizeDate(newSkipStartDate) || getTodayISO();
+      const normStartT = smartNormalizeTime(newSkipStartTime) || '23:00';
+      const normEndD = smartNormalizeDate(newSkipEndDate) || getTomorrowISO();
+      const normEndT = smartNormalizeTime(newSkipEndTime) || '07:00';
+
+      const newRange: SkipTimeRange = {
+        id: 'skip_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        startDate: normStartD,
+        startTime: normStartT,
+        endDate: normEndD,
+        endTime: normEndT,
+        label: newSkipLabel.trim() || `Manual: ${normStartD} ${normStartT} to ${normEndD} ${normEndT}`,
+        isRecurring: false,
+      };
+
+      setSkipTimeRanges([...skipTimeRanges, newRange]);
+      setNewSkipLabel('');
+      Alert.alert('Success', 'Manual Skip time range added successfully!');
+    }
   };
 
   const handleRemoveSkipTimeRange = (id: string) => {
@@ -673,13 +699,6 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const formValidation = getFormValidation();
   const isFormReady = formValidation.valid;
   const isFormClickable = isFormReady || formValidation.errorType === 'time';
-
-  const getFirst5Words = (text: string) => {
-    if (!text || text.trim() === '') return 'Empty caption post...';
-    const words = text.trim().split(/\s+/);
-    if (words.length <= 5) return words.join(' ');
-    return words.slice(0, 5).join(' ') + '...';
-  };
 
   const platformItems: { id: SocialPlatform; label: string; icon: any; color: string }[] = [
     { id: 'facebook', label: 'Facebook', icon: Facebook, color: platformColors.facebook },
@@ -1849,81 +1868,162 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                   onChangeText={setNewSkipLabel}
                 />
 
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
-                  Start Date & Time
-                </Text>
-                <View style={[styles.dateTimeRow, { marginBottom: 10 }]}>
+                {/* Skip Mode Tab Segment Control */}
+                <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, marginBottom: 12, borderColor: colors.border, borderWidth: 1 }}>
                   <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    activeOpacity={0.8}
+                    onPress={() => setNewSkipIsRecurring(false)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 7,
+                      alignItems: 'center',
+                      borderRadius: 8,
+                      backgroundColor: !newSkipIsRecurring ? colors.primaryContainer : 'transparent',
+                    }}
                   >
-                    <CalendarIcon size={13} color={colors.primary} />
-                    <TextInput
-                      style={[styles.dateInputText, { color: colors.textPrimary }]}
-                      value={newSkipStartDate}
-                      onChangeText={setNewSkipStartDate}
-                      onBlur={() => setNewSkipStartDate(smartNormalizeDate(newSkipStartDate))}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={colors.textMuted}
-                      // @ts-ignore
-                      type="date"
-                    />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: !newSkipIsRecurring ? colors.primary : colors.textSecondary }}>
+                      Manual Skip Time
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    activeOpacity={0.8}
+                    onPress={() => setNewSkipIsRecurring(true)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 7,
+                      alignItems: 'center',
+                      borderRadius: 8,
+                      backgroundColor: newSkipIsRecurring ? colors.primaryContainer : 'transparent',
+                    }}
                   >
-                    <Clock size={13} color={colors.primary} />
-                    <TextInput
-                      style={[styles.timeInputText, { color: colors.textPrimary }]}
-                      value={newSkipStartTime}
-                      onChangeText={setNewSkipStartTime}
-                      onBlur={() => setNewSkipStartTime(smartNormalizeTime(newSkipStartTime))}
-                      placeholder="23:00"
-                      placeholderTextColor={colors.textMuted}
-                      // @ts-ignore
-                      type="time"
-                    />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: newSkipIsRecurring ? colors.primary : colors.textSecondary }}>
+                      Smart Skip Time
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
-                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
-                  End Date & Time
-                </Text>
-                <View style={[styles.dateTimeRow, { marginBottom: 12 }]}>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  >
-                    <CalendarIcon size={13} color={colors.danger} />
-                    <TextInput
-                      style={[styles.dateInputText, { color: colors.textPrimary }]}
-                      value={newSkipEndDate}
-                      onChangeText={setNewSkipEndDate}
-                      onBlur={() => setNewSkipEndDate(smartNormalizeDate(newSkipEndDate))}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={colors.textMuted}
-                      // @ts-ignore
-                      type="date"
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  >
-                    <Clock size={13} color={colors.danger} />
-                    <TextInput
-                      style={[styles.timeInputText, { color: colors.textPrimary }]}
-                      value={newSkipEndTime}
-                      onChangeText={setNewSkipEndTime}
-                      onBlur={() => setNewSkipEndTime(smartNormalizeTime(newSkipEndTime))}
-                      placeholder="07:00"
-                      placeholderTextColor={colors.textMuted}
-                      // @ts-ignore
-                      type="time"
-                    />
-                  </TouchableOpacity>
-                </View>
+                {!newSkipIsRecurring ? (
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+                      Start Date & Time
+                    </Text>
+                    <View style={[styles.dateTimeRow, { marginBottom: 10 }]}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                      >
+                        <CalendarIcon size={13} color={colors.primary} />
+                        <TextInput
+                          style={[styles.dateInputText, { color: colors.textPrimary }]}
+                          value={newSkipStartDate}
+                          onChangeText={setNewSkipStartDate}
+                          onBlur={() => setNewSkipStartDate(smartNormalizeDate(newSkipStartDate))}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor={colors.textMuted}
+                          // @ts-ignore
+                          type="date"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                      >
+                        <Clock size={13} color={colors.primary} />
+                        <TextInput
+                          style={[styles.timeInputText, { color: colors.textPrimary }]}
+                          value={newSkipStartTime}
+                          onChangeText={setNewSkipStartTime}
+                          onBlur={() => setNewSkipStartTime(smartNormalizeTime(newSkipStartTime))}
+                          placeholder="23:00"
+                          placeholderTextColor={colors.textMuted}
+                          // @ts-ignore
+                          type="time"
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+                      End Date & Time
+                    </Text>
+                    <View style={[styles.dateTimeRow, { marginBottom: 12 }]}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                      >
+                        <CalendarIcon size={13} color={colors.danger} />
+                        <TextInput
+                          style={[styles.dateInputText, { color: colors.textPrimary }]}
+                          value={newSkipEndDate}
+                          onChangeText={setNewSkipEndDate}
+                          onBlur={() => setNewSkipEndDate(smartNormalizeDate(newSkipEndDate))}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor={colors.textMuted}
+                          // @ts-ignore
+                          type="date"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                      >
+                        <Clock size={13} color={colors.danger} />
+                        <TextInput
+                          style={[styles.timeInputText, { color: colors.textPrimary }]}
+                          value={newSkipEndTime}
+                          onChangeText={setNewSkipEndTime}
+                          onBlur={() => setNewSkipEndTime(smartNormalizeTime(newSkipEndTime))}
+                          placeholder="07:00"
+                          placeholderTextColor={colors.textMuted}
+                          // @ts-ignore
+                          type="time"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 6 }}>
+                      Daily Recurring Window (Every Day)
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border, flex: 1, height: 40, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, borderRadius: 10 }]}
+                      >
+                        <Clock size={13} color={colors.primary} style={{ marginRight: 6 }} />
+                        <TextInput
+                          style={[styles.timeInputText, { color: colors.textPrimary, flex: 1, fontSize: 13, padding: 0 }]}
+                          value={newSkipStartTime}
+                          onChangeText={setNewSkipStartTime}
+                          onBlur={() => setNewSkipStartTime(smartNormalizeTime(newSkipStartTime))}
+                          placeholder="Start Time (e.g. 22:00)"
+                          placeholderTextColor={colors.textMuted}
+                          // @ts-ignore
+                          type="time"
+                        />
+                      </TouchableOpacity>
+
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }}>to</Text>
+
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border, flex: 1, height: 40, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, borderRadius: 10 }]}
+                      >
+                        <Clock size={13} color={colors.danger} style={{ marginRight: 6 }} />
+                        <TextInput
+                          style={[styles.timeInputText, { color: colors.textPrimary, flex: 1, fontSize: 13, padding: 0 }]}
+                          value={newSkipEndTime}
+                          onChangeText={setNewSkipEndTime}
+                          onBlur={() => setNewSkipEndTime(smartNormalizeTime(newSkipEndTime))}
+                          placeholder="End Time (e.g. 06:00)"
+                          placeholderTextColor={colors.textMuted}
+                          // @ts-ignore
+                          type="time"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
 
                 <TouchableOpacity
                   activeOpacity={0.8}

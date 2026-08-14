@@ -17,7 +17,7 @@ interface HeaderProps {
   showStatus?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title = 'SyncFlow', subtitle, showStatus = true }) => {
+export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, showStatus = true }) => {
   const { colors, setMode, isDark } = useThemeStore();
   const posts = useCampaignStore((state) => state.posts);
   const {

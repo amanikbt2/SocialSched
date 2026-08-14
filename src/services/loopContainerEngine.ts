@@ -117,14 +117,50 @@ export function generateLoopPosts(params: LoopGenerationParams): LoopGenerationR
     // Check if currentCursor falls inside ANY active Skip Time range
     let isInsideSkipRange = false;
     for (const range of skipTimeRanges) {
-      const sStart = Date.parse(`${range.startDate}T${range.startTime}:00`);
-      const sEnd = Date.parse(`${range.endDate}T${range.endTime}:00`);
-      if (!isNaN(sStart) && !isNaN(sEnd) && sStart < sEnd) {
-        if (currentCursor.getTime() >= sStart && currentCursor.getTime() < sEnd) {
-          console.log(`⏩ [SkipTimeEngine] Skipping range (${range.startDate} ${range.startTime} to ${range.endDate} ${range.endTime}). Advancing cursor to ${new Date(sEnd).toLocaleString()}...`);
-          currentCursor = new Date(sEnd);
+      if (range.isRecurring) {
+        // Daily recurring range (no date specified)
+        const [startH, startM] = range.startTime.split(':').map(Number);
+        const [endH, endM] = range.endTime.split(':').map(Number);
+
+        const cursorH = currentCursor.getHours();
+        const cursorM = currentCursor.getMinutes();
+
+        const cursorMins = cursorH * 60 + cursorM;
+        const startMins = (startH ?? 0) * 60 + (startM ?? 0);
+        const endMins = (endH ?? 0) * 60 + (endM ?? 0);
+
+        let inside = false;
+        if (startMins < endMins) {
+          inside = cursorMins >= startMins && cursorMins < endMins;
+        } else {
+          inside = cursorMins >= startMins || cursorMins < endMins;
+        }
+
+        if (inside) {
+          // Advance cursor to end of daily range
+          const endD = new Date(currentCursor.getTime());
+          if (startMins >= endMins && cursorMins >= startMins) {
+            // Spans midnight and cursor is on the start day -> target is tomorrow's end time
+            endD.setDate(endD.getDate() + 1);
+          }
+          endD.setHours(endH, endM, 0, 0);
+
+          console.log(`⏩ [SkipTimeEngine] Skipping smart daily range (${range.startTime} to ${range.endTime}). Advancing cursor to ${endD.toLocaleString()}...`);
+          currentCursor = endD;
           isInsideSkipRange = true;
           break;
+        }
+      } else {
+        // Standard Manual range (specific date and time)
+        const sStart = Date.parse(`${range.startDate}T${range.startTime}:00`);
+        const sEnd = Date.parse(`${range.endDate}T${range.endTime}:00`);
+        if (!isNaN(sStart) && !isNaN(sEnd) && sStart < sEnd) {
+          if (currentCursor.getTime() >= sStart && currentCursor.getTime() < sEnd) {
+            console.log(`⏩ [SkipTimeEngine] Skipping range (${range.startDate} ${range.startTime} to ${range.endDate} ${range.endTime}). Advancing cursor to ${new Date(sEnd).toLocaleString()}...`);
+            currentCursor = new Date(sEnd);
+            isInsideSkipRange = true;
+            break;
+          }
         }
       }
     }

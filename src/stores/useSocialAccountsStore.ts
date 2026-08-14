@@ -39,8 +39,8 @@ interface SocialAccountsState {
   loadSavedAccounts: () => Promise<void>;
 }
 
-const STORAGE_KEY_SAVED_PAGES = 'syncflow_saved_fb_pages';
-const STORAGE_KEY_LAST_USED_PAGE_ID = 'syncflow_last_used_fb_page_id';
+const STORAGE_KEY_SAVED_PAGES = 'smartflow_saved_fb_pages';
+const STORAGE_KEY_LAST_USED_PAGE_ID = 'smartflow_last_used_fb_page_id';
 
 const DEFAULT_ACCOUNTS: LinkedAccount[] = [
   {

@@ -27,7 +27,7 @@ export const useQueueStore = create<QueueStoreState>((set) => ({
   autoRetry: true,
 
   setNetworkStatus: async (status) => {
-    await AsyncStorage.setItem('syncflow_network_status', status);
+    await AsyncStorage.setItem('smartflow_network_status', status);
     set({ networkStatus: status });
   },
 
@@ -36,14 +36,14 @@ export const useQueueStore = create<QueueStoreState>((set) => ({
   setActiveUpload: (activePostId, activeProgress) => set({ activePostId, activeProgress }),
 
   setAutoRetry: async (autoRetry) => {
-    await AsyncStorage.setItem('syncflow_auto_retry', JSON.stringify(autoRetry));
+    await AsyncStorage.setItem('smartflow_auto_retry', JSON.stringify(autoRetry));
     set({ autoRetry });
   },
 
   loadQueueSettings: async () => {
     try {
-      const net = (await AsyncStorage.getItem('syncflow_network_status')) as NetworkStatus | null;
-      const retry = await AsyncStorage.getItem('syncflow_auto_retry');
+      const net = (await AsyncStorage.getItem('smartflow_network_status')) as NetworkStatus | null;
+      const retry = await AsyncStorage.getItem('smartflow_auto_retry');
       set({
         networkStatus: net || 'online',
         autoRetry: retry ? JSON.parse(retry) : true,

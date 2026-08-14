@@ -55,7 +55,7 @@ export async function triggerInstantPublish(postId: string): Promise<{ success: 
     );
 
     if (fbResult.success) {
-      await updatePost(postId, { status: 'published', uploadProgress: 100, failureReason: null });
+      await updatePost(postId, { status: 'published', uploadProgress: 100, failureReason: null, facebookPostId: fbResult.fbPostId });
       return { success: true };
     } else {
       await updatePost(postId, { status: 'failed', uploadProgress: 0, failureReason: fbResult.error });
@@ -160,7 +160,8 @@ async function processQueueTick() {
 
           if (nextProgress >= 100) {
             // Upload Complete! Execute Meta Server Scheduling / Publishing
-            let publishError: string | null = null;
+             let publishError: string | null = null;
+            let fbPostId: string | null = null;
             const targetPlatforms = currentUpload.platforms || ['facebook'];
 
             if (targetPlatforms.includes('facebook')) {
@@ -173,7 +174,9 @@ async function processQueueTick() {
                   fbAccount.accessToken,
                   fbAccount.pageId || 'me'
                 );
-                if (!fbResult.success) {
+                if (fbResult.success) {
+                  fbPostId = fbResult.fbPostId || null;
+                } else {
                   publishError = fbResult.error || 'Facebook publishing failed.';
                 }
               }
@@ -192,6 +195,7 @@ async function processQueueTick() {
                 status: 'published',
                 uploadProgress: 100,
                 failureReason: null,
+                facebookPostId: fbPostId,
               });
             }
             processingPostIds.delete(currentUpload.id);

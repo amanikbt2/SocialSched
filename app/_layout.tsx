@@ -21,7 +21,7 @@ export default function RootLayout() {
     if (Platform.OS === 'web') {
       const doc = (globalThis as any).document;
       if (doc) {
-        const styleId = 'syncflow-web-viewport-fix';
+        const styleId = 'smartflow-web-viewport-fix';
         if (!doc.getElementById(styleId)) {
           const styleEl = doc.createElement('style');
           styleEl.id = styleId;

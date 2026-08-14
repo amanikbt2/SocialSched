@@ -10,7 +10,7 @@ export async function getDatabase(): Promise<any> {
     dbInstance = await createWebDatabase();
   } else {
     const SQLite = require('expo-sqlite');
-    dbInstance = await SQLite.openDatabaseAsync('syncflow.db');
+    dbInstance = await SQLite.openDatabaseAsync('smartflow.db');
     await initNativeTables(dbInstance);
   }
 
@@ -41,9 +41,9 @@ async function createWebDatabase() {
   };
 
   const store: Record<string, any[]> = {
-    campaigns: await load('syncflow_web_campaigns'),
-    posts: await load('syncflow_web_posts'),
-    media: await load('syncflow_web_media'),
+    campaigns: await load('smartflow_web_campaigns'),
+    posts: await load('smartflow_web_posts'),
+    media: await load('smartflow_web_media'),
   };
 
   const tableKey = (sql: string): string | null => {
@@ -76,7 +76,7 @@ async function createWebDatabase() {
             store[table].push(row);
           }
         }
-        await save(`syncflow_web_${table}`, store[table]);
+        await save(`smartflow_web_${table}`, store[table]);
 
       } else if (sqlLower.startsWith('update')) {
         // Parse SET columns and WHERE id = ?
@@ -94,7 +94,7 @@ async function createWebDatabase() {
             setCols.forEach((col, i) => {
               target[col] = setValues[i] !== undefined ? setValues[i] : null;
             });
-            await save(`syncflow_web_${table}`, store[table]);
+            await save(`smartflow_web_${table}`, store[table]);
           }
         }
 
@@ -104,7 +104,7 @@ async function createWebDatabase() {
           const col = whereMatch[1];
           const val = params[0];
           store[table] = store[table].filter((r) => r[col] !== val);
-          await save(`syncflow_web_${table}`, store[table]);
+          await save(`smartflow_web_${table}`, store[table]);
         }
       }
 
@@ -116,7 +116,7 @@ async function createWebDatabase() {
       if (!table || !store[table]) return [];
       // Reload from storage to ensure freshness
       try {
-        const raw = await AsyncStorage.getItem(`syncflow_web_${table}`);
+        const raw = await AsyncStorage.getItem(`smartflow_web_${table}`);
         if (raw) store[table] = JSON.parse(raw);
       } catch {}
       return store[table] as any as T[];
@@ -184,6 +184,7 @@ async function initNativeTables(database: any) {
       failureReason TEXT,
       uploadProgress INTEGER DEFAULT 0,
       tags TEXT NOT NULL,
+      facebookPostId TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       FOREIGN KEY (campaignId) REFERENCES campaigns (id) ON DELETE SET NULL
@@ -225,6 +226,7 @@ async function initNativeTables(database: any) {
     `ALTER TABLE campaigns ADD COLUMN enableFirstComment INTEGER DEFAULT 0`,
     `ALTER TABLE campaigns ADD COLUMN firstComment TEXT`,
     `ALTER TABLE posts ADD COLUMN firstComment TEXT`,
+    `ALTER TABLE posts ADD COLUMN facebookPostId TEXT`,
   ];
 
   for (const migration of migrations) {
