@@ -152,6 +152,8 @@ const UploadProgressCircle: React.FC<UploadProgressCircleProps> = ({ progress })
   );
 };
 
+const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
+
 export default function ContainerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
