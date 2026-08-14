@@ -27,6 +27,7 @@ import {
   Instagram,
   Video,
   ChevronDown,
+  ChevronUp,
   LayoutGrid,
   List,
   Layers,
@@ -58,11 +59,22 @@ export default function PostsManagerScreen() {
   // State
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<SocialPlatform>('facebook');
+  const [isPlatformSelectorExpanded, setIsPlatformSelectorExpanded] = useState(false);
   const [pageDropdownOpen, setPageDropdownOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('fb');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const platformsConfig = [
+    { id: 'facebook' as SocialPlatform, name: 'Facebook', icon: Facebook, color: '#1877F2', bg: '#1877F218' },
+    { id: 'x' as SocialPlatform, name: 'Twitter', icon: Twitter, color: '#1DA1F2', bg: '#1DA1F218' },
+    { id: 'instagram' as SocialPlatform, name: 'Instagram', icon: Instagram, color: '#E4405F', bg: '#E4405F18' },
+    { id: 'tiktok' as SocialPlatform, name: 'TikTok', icon: Video, color: colors.textPrimary, bg: '#00000018' },
+  ];
+
+  const activePlatformConfig = platformsConfig.find((p) => p.id === selectedPlatform) || platformsConfig[0];
+  const ActivePlatformIcon = activePlatformConfig.icon;
 
   // Facebook Live Feed integration
   const [postsSource, setPostsSource] = useState<'app' | 'facebook_live'>('app');
@@ -379,72 +391,71 @@ export default function PostsManagerScreen() {
           />
         }
       >
-        {/* Top Platform Selection Discs */}
-        <View style={[styles.platformDiscsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {/* Top Collapsible Platform Selection Bar */}
+        {!isPlatformSelectorExpanded ? (
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => setSelectedPlatform('facebook')}
-            style={[
-              styles.platformDisc,
-              selectedPlatform === 'facebook' && { backgroundColor: '#1877F218', borderColor: '#1877F2', borderWidth: 2 },
-            ]}
+            onPress={() => setIsPlatformSelectorExpanded(true)}
+            style={[styles.platformCollapsedCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
-            <View style={[styles.discIconCircle, { backgroundColor: '#1877F2' }]}>
-              <Facebook size={18} color="#FFFFFF" />
-            </View>
-            <Text style={[styles.discText, { color: selectedPlatform === 'facebook' ? '#1877F2' : colors.textSecondary }]}>
-              Facebook
-            </Text>
-          </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={[styles.discIconCircle, { backgroundColor: activePlatformConfig.color, marginBottom: 0, width: 32, height: 32, borderRadius: 16 }]}>
+                <ActivePlatformIcon size={16} color="#FFFFFF" />
+              </View>
 
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => setSelectedPlatform('x')}
-            style={[
-              styles.platformDisc,
-              selectedPlatform === 'x' && { backgroundColor: '#1DA1F218', borderColor: '#1DA1F2', borderWidth: 2 },
-            ]}
-          >
-            <View style={[styles.discIconCircle, { backgroundColor: '#1DA1F2' }]}>
-              <Twitter size={18} color="#FFFFFF" />
+              <View style={{ flexDirection: 'column' }}>
+                <Text style={[styles.discText, { color: activePlatformConfig.color, fontSize: 13, fontWeight: '800' }]}>
+                  {activePlatformConfig.name}
+                </Text>
+                <Text style={{ fontSize: 10, color: colors.textSecondary }}>Tap to switch social platform</Text>
+              </View>
             </View>
-            <Text style={[styles.discText, { color: selectedPlatform === 'x' ? '#1DA1F2' : colors.textSecondary }]}>
-              Twitter
-            </Text>
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => setSelectedPlatform('instagram')}
-            style={[
-              styles.platformDisc,
-              selectedPlatform === 'instagram' && { backgroundColor: '#E4405F18', borderColor: '#E4405F', borderWidth: 2 },
-            ]}
-          >
-            <View style={[styles.discIconCircle, { backgroundColor: '#E4405F' }]}>
-              <Instagram size={18} color="#FFFFFF" />
+            <View style={[styles.expandPillBadge, { backgroundColor: activePlatformConfig.color + '15' }]}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: activePlatformConfig.color }}>Switch</Text>
+              <ChevronDown size={14} color={activePlatformConfig.color} />
             </View>
-            <Text style={[styles.discText, { color: selectedPlatform === 'instagram' ? '#E4405F' : colors.textSecondary }]}>
-              Instagram
-            </Text>
           </TouchableOpacity>
+        ) : (
+          <View style={[styles.platformExpandedBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                SELECT PLATFORM
+              </Text>
+              <TouchableOpacity onPress={() => setIsPlatformSelectorExpanded(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <ChevronUp size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
 
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => setSelectedPlatform('tiktok')}
-            style={[
-              styles.platformDisc,
-              selectedPlatform === 'tiktok' && { backgroundColor: '#00000018', borderColor: colors.textPrimary, borderWidth: 2 },
-            ]}
-          >
-            <View style={[styles.discIconCircle, { backgroundColor: '#000000' }]}>
-              <Video size={18} color="#FFFFFF" />
+            <View style={styles.platformDiscsRow}>
+              {platformsConfig.map((plat) => {
+                const IconComponent = plat.icon;
+                const isSelected = selectedPlatform === plat.id;
+                return (
+                  <TouchableOpacity
+                    key={plat.id}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setSelectedPlatform(plat.id);
+                      setIsPlatformSelectorExpanded(false);
+                    }}
+                    style={[
+                      styles.platformDisc,
+                      isSelected && { backgroundColor: plat.bg, borderColor: plat.color, borderWidth: 2 },
+                    ]}
+                  >
+                    <View style={[styles.discIconCircle, { backgroundColor: plat.color }]}>
+                      <IconComponent size={18} color="#FFFFFF" />
+                    </View>
+                    <Text style={[styles.discText, { color: isSelected ? plat.color : colors.textSecondary }]}>
+                      {plat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-            <Text style={[styles.discText, { color: selectedPlatform === 'tiktok' ? colors.textPrimary : colors.textSecondary }]}>
-              TikTok
-            </Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+        )}
 
         {/* Facebook Page Dropdown (shown when Facebook platform is selected) */}
         {selectedPlatform === 'facebook' && (
@@ -896,13 +907,32 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderRadius: 14,
   },
+  platformCollapsedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  expandPillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  platformExpandedBox: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
   platformDiscsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
+    paddingVertical: 8,
   },
   platformDisc: {
     alignItems: 'center',

@@ -58,6 +58,99 @@ import {
   X,
 } from 'lucide-react-native';
 import { AddContainerModal } from '../../src/components/container/AddContainerModal';
+import Svg, { Circle } from 'react-native-svg';
+
+// Custom circular progress component
+interface UploadProgressCircleProps {
+  progress: number;
+}
+
+const UploadProgressCircle: React.FC<UploadProgressCircleProps> = ({ progress }) => {
+  const size = 20;
+  const strokeWidth = 2.5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+
+  // Option 1: "orange for a while" preparing phase when progress is 0 or very small
+  const isPreparing = progress === 0 || progress <= 5;
+  const strokeDashoffset = isPreparing 
+    ? circumference * 0.45 // 55% circular arc for preparation spinner
+    : circumference - (progress / 100) * circumference;
+
+  const strokeColor = isPreparing ? '#F59E0B' : '#10B981'; // Orange for preparing, Green for actual progress
+
+  // Spin animation loop
+  const spinValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (isPreparing) {
+      // Fast continuous spin during preparing orange phase
+      anim = Animated.loop(
+        Animated.timing(spinValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      );
+      anim.start();
+    } else {
+      // Slower gradual rotation during green upload phase, or simple fixed rotation
+      anim = Animated.loop(
+        Animated.timing(spinValue, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
+        })
+      );
+      anim.start();
+    }
+
+    return () => {
+      if (anim) anim.stop();
+    };
+  }, [isPreparing, spinValue]);
+
+  const rotation = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+      <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+        <Svg width={size} height={size}>
+          {/* Background circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={isPreparing ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)'}
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          {/* Active progress arc */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            fill="none"
+          />
+        </Svg>
+      </Animated.View>
+      {!isPreparing && (
+        <Text style={{ fontSize: 7, fontWeight: '900', color: '#10B981', position: 'absolute' }}>
+          {progress}
+        </Text>
+      )}
+    </View>
+  );
+};
 
 export default function ContainerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -649,9 +742,7 @@ export default function ContainerDetailScreen() {
 
                   {/* Spinning upload indicator */}
                   {isActive ? (
-                    <Animated.View style={{ transform: [{ rotate: spin }] }}>
-                      <ActivityIndicator size={16} color={colors.warning} />
-                    </Animated.View>
+                    <UploadProgressCircle progress={post.uploadProgress || 0} />
                   ) : (
                     <>
                       {!isMultiSelectMode && (
