@@ -165,85 +165,80 @@ export default function ContainerDetailScreen() {
 
   const handleDeleteSinglePost = (post: Post) => {
     const isLoop = container?.isLoopContainer;
+    const title = isLoop ? 'Remove Loop Post' : 'Delete Post';
     const loopNote = isLoop
-      ? `\n\n✅ Its media will be freed back into the pool so the loop can reuse it.`
+      ? '\n\n✅ Its media will be freed back into the pool so the loop can reuse it.'
       : '\n\nThis will also cancel it on Meta servers.';
+    const msg = `Remove this post?${loopNote}`;
 
-    Alert.alert(
-      isLoop ? 'Remove Loop Post' : 'Delete Post',
-      `Remove this post?${loopNote}`,
-      [
+    const performDelete = async () => {
+      if (isLoop) {
+        await smartDeleteLoopPosts(container!.id, [post.id]);
+      } else {
+        await deletePost(post.id);
+        const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
+        if (fbAcc?.accessToken) {
+          const targetFbId = post.facebookPostId || post.id;
+          await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${msg}`)) {
+        performDelete();
+      }
+    } else {
+      Alert.alert(title, msg, [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: isLoop ? 'Remove & Reclaim Media' : 'Delete Post',
-          style: 'destructive',
-          onPress: async () => {
-            if (isLoop) {
-              await smartDeleteLoopPosts(container!.id, [post.id]);
-            } else {
-              await deletePost(post.id);
-              const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
-              if (fbAcc?.accessToken) {
-                const targetFbId = post.facebookPostId || post.id;
-                await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
-              }
-            }
-          },
-        },
-      ]
-    );
+        { text: isLoop ? 'Remove & Reclaim Media' : 'Delete Post', style: 'destructive', onPress: performDelete },
+      ]);
+    }
   };
 
   const handleDeleteSelected = () => {
     if (selectedPostIds.length === 0) return;
-
     const isLoop = container?.isLoopContainer;
-    if (isLoop) {
-      Alert.alert(
-        'Remove Loop Posts',
-        `Remove ${selectedPostIds.length} post(s)? Their media will be freed back into the pool so the loop can reuse them.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: `Remove ${selectedPostIds.length} Post${selectedPostIds.length !== 1 ? 's' : ''} & Reclaim Media`,
-            style: 'destructive',
-            onPress: async () => {
-              const result = await smartDeleteLoopPosts(container!.id, selectedPostIds);
-              setSelectedPostIds([]);
-              setIsMultiSelectMode(false);
-              Alert.alert(
-                '✅ Done',
-                `Removed ${result.deleted} post(s). ${result.reclaimed} media file(s) returned to the pool.`
-              );
-            },
-          },
-        ]
-      );
+    const count = selectedPostIds.length;
+    const title = isLoop ? 'Remove Loop Posts' : 'Delete Selected Posts';
+    const msg = isLoop
+      ? `Remove ${count} post(s)? Their media will be freed back into the pool so the loop can reuse them.`
+      : `Are you sure you want to delete ${count} selected post(s)?`;
+
+    const performBulkDelete = async () => {
+      if (isLoop) {
+        const result = await smartDeleteLoopPosts(container!.id, selectedPostIds);
+        setSelectedPostIds([]);
+        setIsMultiSelectMode(false);
+        if (Platform.OS === 'web') {
+          if (typeof window !== 'undefined') window.alert(`Done: Removed ${result.deleted} post(s). ${result.reclaimed} media file(s) returned to pool.`);
+        } else {
+          Alert.alert('✅ Done', `Removed ${result.deleted} post(s). ${result.reclaimed} media file(s) returned to the pool.`);
+        }
+      } else {
+        const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
+        for (const pid of selectedPostIds) {
+          const pObj = containerPosts.find((p) => p.id === pid);
+          await deletePost(pid);
+          if (fbAcc?.accessToken && pObj) {
+            const targetFbId = pObj.facebookPostId || pObj.id;
+            await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
+          }
+        }
+        setSelectedPostIds([]);
+        setIsMultiSelectMode(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${msg}`)) {
+        performBulkDelete();
+      }
     } else {
-      Alert.alert(
-        'Delete Selected Posts',
-        `Are you sure you want to delete ${selectedPostIds.length} selected post(s)?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
-              for (const pid of selectedPostIds) {
-                const pObj = containerPosts.find((p) => p.id === pid);
-                await deletePost(pid);
-                if (fbAcc?.accessToken && pObj) {
-                  const targetFbId = pObj.facebookPostId || pObj.id;
-                  await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
-                }
-              }
-              setSelectedPostIds([]);
-              setIsMultiSelectMode(false);
-            },
-          },
-        ]
-      );
+      Alert.alert(title, msg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: performBulkDelete },
+      ]);
     }
   };
 

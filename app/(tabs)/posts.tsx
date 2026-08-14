@@ -231,42 +231,46 @@ export default function PostsManagerScreen() {
       ? 'Are you sure you want to delete this post directly off your Facebook Page feed/schedule?'
       : 'Are you sure you want to delete this post from the container and cancel it on Meta server?';
 
-    Alert.alert(alertTitle, alertMsg, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingPostIds((prev) => [...prev, post.id]);
-          const fbId = post.facebookPostId || post.id;
+    const performDelete = async () => {
+      setDeletingPostIds((prev) => [...prev, post.id]);
+      const fbId = post.facebookPostId || post.id;
 
-          if (activeFbAccount?.accessToken && fbId) {
-            await deleteMetaScheduledPost(
-              activeFbAccount.accessToken,
-              fbId,
-              activeFbAccount.pageId || 'me'
-            );
-          }
+      if (activeFbAccount?.accessToken && fbId) {
+        await deleteMetaScheduledPost(
+          activeFbAccount.accessToken,
+          fbId,
+          activeFbAccount.pageId || 'me'
+        );
+      }
 
-          if (isLive) {
-            setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
-            const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
-            if (localMatch) {
-              await deletePost(localMatch.id);
-            }
-          } else {
-            if (post.campaignId) {
-              const { smartDeleteLoopPosts } = useCampaignStore.getState();
-              await smartDeleteLoopPosts(post.campaignId, [post.id]);
-            } else {
-              await deletePost(post.id);
-            }
-          }
+      if (isLive) {
+        setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
+        const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
+        if (localMatch) {
+          await deletePost(localMatch.id);
+        }
+      } else {
+        if (post.campaignId) {
+          const { smartDeleteLoopPosts } = useCampaignStore.getState();
+          await smartDeleteLoopPosts(post.campaignId, [post.id]);
+        } else {
+          await deletePost(post.id);
+        }
+      }
 
-          setDeletingPostIds((prev) => prev.filter((id) => id !== post.id));
-        },
-      },
-    ]);
+      setDeletingPostIds((prev) => prev.filter((id) => id !== post.id));
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${alertTitle}\n\n${alertMsg}`)) {
+        performDelete();
+      }
+    } else {
+      Alert.alert(alertTitle, alertMsg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: performDelete },
+      ]);
+    }
   };
 
   // Bulk Delete
@@ -274,61 +278,63 @@ export default function PostsManagerScreen() {
     if (selectedPostIds.length === 0) return;
     const count = selectedPostIds.length;
     const isLive = postsSource === 'facebook_live';
+    const title = `Delete ${count} Post${count !== 1 ? 's' : ''}`;
+    const msg = `Are you sure you want to delete ${count} post(s)? They will be removed from your app and canceled on Meta servers.`;
 
-    Alert.alert(
-      `Delete ${count} Post${count !== 1 ? 's' : ''}`,
-      `Are you sure you want to delete ${count} post(s)? They will be removed from your app and canceled on Meta servers.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Delete ${count} Post${count !== 1 ? 's' : ''}`,
-          style: 'destructive',
-          onPress: async () => {
-            setDeletionProgress({ total: count, done: 0, isDeleting: true });
-            setDeletingPostIds(selectedPostIds);
+    const performBulkDelete = async () => {
+      setDeletionProgress({ total: count, done: 0, isDeleting: true });
+      setDeletingPostIds(selectedPostIds);
 
-            const targetIds = [...selectedPostIds];
-            const CHUNK_SIZE = 5;
-            let completed = 0;
+      const targetIds = [...selectedPostIds];
+      const CHUNK_SIZE = 5;
+      let completed = 0;
 
-            for (let i = 0; i < targetIds.length; i += CHUNK_SIZE) {
-              const chunk = targetIds.slice(i, i + CHUNK_SIZE);
-              await Promise.all(
-                chunk.map(async (pid) => {
-                  const targetPost = displayedPosts.find((p) => p.id === pid);
-                  if (targetPost) {
-                    const fbId = targetPost.facebookPostId || targetPost.id;
-                    if (activeFbAccount?.accessToken && fbId) {
-                      await deleteMetaScheduledPost(
-                        activeFbAccount.accessToken,
-                        fbId,
-                        activeFbAccount.pageId || 'me'
-                      );
-                    }
-                    if (targetPost.campaignId) {
-                      const { smartDeleteLoopPosts } = useCampaignStore.getState();
-                      await smartDeleteLoopPosts(targetPost.campaignId, [pid]);
-                    } else {
-                      await deletePost(pid);
-                    }
-                  }
-                  if (isLive) {
-                    setFacebookLivePosts((prev) => prev.filter((p) => p.id !== pid));
-                  }
-                  completed++;
-                  setDeletionProgress((prev) => ({ ...prev, done: completed }));
-                })
-              );
+      for (let i = 0; i < targetIds.length; i += CHUNK_SIZE) {
+        const chunk = targetIds.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(async (pid) => {
+            const targetPost = displayedPosts.find((p) => p.id === pid);
+            if (targetPost) {
+              const fbId = targetPost.facebookPostId || targetPost.id;
+              if (activeFbAccount?.accessToken && fbId) {
+                await deleteMetaScheduledPost(
+                  activeFbAccount.accessToken,
+                  fbId,
+                  activeFbAccount.pageId || 'me'
+                );
+              }
+              if (targetPost.campaignId) {
+                const { smartDeleteLoopPosts } = useCampaignStore.getState();
+                await smartDeleteLoopPosts(targetPost.campaignId, [pid]);
+              } else {
+                await deletePost(pid);
+              }
             }
+            if (isLive) {
+              setFacebookLivePosts((prev) => prev.filter((p) => p.id !== pid));
+            }
+            completed++;
+            setDeletionProgress((prev) => ({ ...prev, done: completed }));
+          })
+        );
+      }
 
-            setDeletingPostIds([]);
-            setSelectedPostIds([]);
-            setIsMultiSelectMode(false);
-            setDeletionProgress({ total: 0, done: 0, isDeleting: false });
-          },
-        },
-      ]
-    );
+      setDeletingPostIds([]);
+      setSelectedPostIds([]);
+      setIsMultiSelectMode(false);
+      setDeletionProgress({ total: 0, done: 0, isDeleting: false });
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${msg}`)) {
+        performBulkDelete();
+      }
+    } else {
+      Alert.alert(title, msg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: `Delete ${count} Post${count !== 1 ? 's' : ''}`, style: 'destructive', onPress: performBulkDelete },
+      ]);
+    }
   };
 
   return (
