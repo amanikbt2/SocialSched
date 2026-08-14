@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,16 @@ import {
   Image,
   Alert,
   FlatList,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { useSocialAccountsStore, SavedFacebookPage } from '../../src/stores/useSocialAccountsStore';
 import { Header } from '../../src/components/common/Header';
 import { FacebookMediaGrid } from '../../src/components/common/FacebookMediaGrid';
-import { deleteMetaScheduledPost } from '../../src/services/facebookPublisher';
+import { TopReloadProgressBar } from '../../src/components/common/TopReloadProgressBar';
+import { deleteMetaScheduledPost, fetchMetaPublishedPosts, fetchMetaScheduledPosts } from '../../src/services/facebookPublisher';
 import { Post, SocialPlatform } from '../../src/db/types';
 import {
   Facebook,
@@ -48,10 +51,11 @@ type DateFilter = 'all' | 'today' | 'future' | 'past';
 
 export default function PostsManagerScreen() {
   const colors = useThemeStore((state) => state.colors);
-  const { posts, deletePost } = useCampaignStore();
-  const { accounts, savedFacebookPages, switchFacebookPage, getAccount } = useSocialAccountsStore();
+  const { posts, deletePost, loadData } = useCampaignStore();
+  const { accounts, savedFacebookPages, switchFacebookPage, getAccount, loadSavedAccounts } = useSocialAccountsStore();
 
   // State
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<SocialPlatform>('facebook');
   const [pageDropdownOpen, setPageDropdownOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('fb');
@@ -59,9 +63,10 @@ export default function PostsManagerScreen() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Multi-select state
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+  // Facebook Live Feed integration
+  const [postsSource, setPostsSource] = useState<'app' | 'facebook_live'>('app');
+  const [facebookLivePosts, setFacebookLivePosts] = useState<Post[]>([]);
+  const [isLoadingLive, setIsLoadingLive] = useState(false);
 
   // Active Facebook Account
   const activeFbAccount = getAccount('facebook');
@@ -71,11 +76,94 @@ export default function PostsManagerScreen() {
     activeFbAccount?.avatarUrl ||
     `https://graph.facebook.com/v19.0/${activePageId}/picture?type=square`;
 
+  const fetchFacebookLivePosts = async () => {
+    if (!activeFbAccount?.accessToken) return;
+    setIsLoadingLive(true);
+    try {
+      const sched = await fetchMetaScheduledPosts(activeFbAccount.accessToken, activeFbAccount.pageId);
+      const pub = await fetchMetaPublishedPosts(activeFbAccount.accessToken, activeFbAccount.pageId);
+
+      const mappedSched: Post[] = sched.map((p) => ({
+        id: p.id,
+        campaignId: null,
+        caption: p.message || '[No caption]',
+        images: p.full_picture ? [p.full_picture] : [],
+        videos: [],
+        platforms: ['facebook'],
+        scheduledAt: p.scheduled_publish_time
+          ? new Date(p.scheduled_publish_time * 1000).toISOString()
+          : p.created_time || new Date().toISOString(),
+        status: 'scheduled',
+        notes: 'Meta Server (Scheduled)',
+        failureReason: null,
+        uploadProgress: 100,
+        tags: [],
+        hashtags: [],
+        mentions: [],
+        createdAt: p.created_time || new Date().toISOString(),
+        updatedAt: p.created_time || new Date().toISOString(),
+        facebookPostId: p.id,
+      }));
+
+      const mappedPub: Post[] = pub.map((p) => ({
+        id: p.id,
+        campaignId: null,
+        caption: p.message || '[No caption]',
+        images: p.full_picture ? [p.full_picture] : [],
+        videos: [],
+        platforms: ['facebook'],
+        scheduledAt: p.created_time || new Date().toISOString(),
+        status: 'published',
+        notes: 'Meta Server (Published Feed)',
+        failureReason: null,
+        uploadProgress: 100,
+        tags: [],
+        hashtags: [],
+        mentions: [],
+        createdAt: p.created_time || new Date().toISOString(),
+        updatedAt: p.created_time || new Date().toISOString(),
+        facebookPostId: p.id,
+      }));
+
+      const combined = [...mappedSched, ...mappedPub].sort(
+        (a, b) => Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt)
+      );
+
+      setFacebookLivePosts(combined);
+    } catch (err) {
+      console.warn('Failed fetching live Facebook posts:', err);
+    } finally {
+      setIsLoadingLive(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPlatform === 'facebook' && postsSource === 'facebook_live') {
+      fetchFacebookLivePosts();
+    }
+  }, [selectedPlatform, postsSource, activePageId]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    await loadSavedAccounts();
+    if (selectedPlatform === 'facebook' && postsSource === 'facebook_live') {
+      await fetchFacebookLivePosts();
+    }
+    setRefreshing(false);
+  }, [loadData, loadSavedAccounts, selectedPlatform, postsSource, activePageId]);
+
+  // Multi-select state
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+
   // Filtered Posts
+  const displayedPosts = postsSource === 'facebook_live' ? facebookLivePosts : posts;
+
   const filteredPosts = useMemo(() => {
-    return posts.filter((post) => {
-      // Platform filter
-      if (post.platforms && post.platforms.length > 0) {
+    return displayedPosts.filter((post) => {
+      // Platform filter (only for local app queue posts)
+      if (postsSource === 'app' && post.platforms && post.platforms.length > 0) {
         if (!post.platforms.includes(selectedPlatform)) return false;
       }
 
@@ -114,7 +202,7 @@ export default function PostsManagerScreen() {
 
       return true;
     });
-  }, [posts, selectedPlatform, statusFilter, dateFilter, searchQuery]);
+  }, [displayedPosts, selectedPlatform, statusFilter, dateFilter, searchQuery, postsSource]);
 
   // Handle Multi-Select Toggles
   const handleToggleSelectPost = (postId: string) => {
@@ -135,59 +223,168 @@ export default function PostsManagerScreen() {
 
   // Delete Single Post
   const handleDeletePost = (post: Post) => {
-    Alert.alert(
-      'Delete Post',
-      'Are you sure you want to delete this post from the container and cancel it on Meta server?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Post',
-          style: 'destructive',
-          onPress: async () => {
-            await deletePost(post.id);
-            if (activeFbAccount?.accessToken) {
-              await deleteMetaScheduledPost(activeFbAccount.accessToken, post.id);
-            }
+    if (postsSource === 'facebook_live') {
+      Alert.alert(
+        'Delete Live Post',
+        'Are you sure you want to delete this post directly off your Facebook Page feed/schedule?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete from Facebook',
+            style: 'destructive',
+            onPress: async () => {
+              const fbId = post.facebookPostId || post.id;
+              if (activeFbAccount?.accessToken && fbId) {
+                const ok = await deleteMetaScheduledPost(
+                  activeFbAccount.accessToken,
+                  fbId,
+                  activeFbAccount.pageId || 'me'
+                );
+                if (ok) {
+                  const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
+                  if (localMatch) {
+                    await deletePost(localMatch.id);
+                  }
+                  setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
+                  Alert.alert('Success', 'Post successfully deleted from Facebook Page!');
+                } else {
+                  // Even if Meta API rejected (e.g. post already deleted on FB), remove locally
+                  setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
+                  const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
+                  if (localMatch) {
+                    await deletePost(localMatch.id);
+                  }
+                  Alert.alert('Removed', 'Post removed from your list.');
+                }
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Delete Post',
+        'Are you sure you want to delete this post from the container and cancel it on Meta server?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Post',
+            style: 'destructive',
+            onPress: async () => {
+              if (post.campaignId) {
+                const { smartDeleteLoopPosts } = useCampaignStore.getState();
+                await smartDeleteLoopPosts(post.campaignId, [post.id]);
+              } else {
+                await deletePost(post.id);
+              }
+              const fbId = post.facebookPostId || post.id;
+              if (activeFbAccount?.accessToken && fbId) {
+                await deleteMetaScheduledPost(
+                  activeFbAccount.accessToken,
+                  fbId,
+                  activeFbAccount.pageId || 'me'
+                );
+              }
+            },
+          },
+        ]
+      );
+    }
   };
 
   // Bulk Delete
   const handleBulkDelete = () => {
     if (selectedPostIds.length === 0) return;
-    Alert.alert(
-      'Bulk Delete Posts',
-      `Delete ${selectedPostIds.length} selected post(s) from app & cancel on Meta server?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All Selected',
-          style: 'destructive',
-          onPress: async () => {
-            for (const pid of selectedPostIds) {
-              await deletePost(pid);
+    if (postsSource === 'facebook_live') {
+      Alert.alert(
+        'Bulk Delete Live Posts',
+        `Are you sure you want to delete ${selectedPostIds.length} selected post(s) directly off your Facebook Page feed/schedule?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete All Selected',
+            style: 'destructive',
+            onPress: async () => {
+              let successCount = 0;
               if (activeFbAccount?.accessToken) {
-                await deleteMetaScheduledPost(activeFbAccount.accessToken, pid);
+                for (const pid of selectedPostIds) {
+                  const targetPost = facebookLivePosts.find((p) => p.id === pid);
+                  if (targetPost) {
+                    const fbId = targetPost.facebookPostId || targetPost.id;
+                    const ok = await deleteMetaScheduledPost(
+                      activeFbAccount.accessToken,
+                      fbId,
+                      activeFbAccount.pageId || 'me'
+                    );
+                    if (ok) successCount++;
+                    const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === targetPost.id);
+                    if (localMatch) {
+                      await deletePost(localMatch.id);
+                    }
+                  }
+                }
               }
-            }
-            setSelectedPostIds([]);
-            setIsMultiSelectMode(false);
+              setFacebookLivePosts((prev) => prev.filter((p) => !selectedPostIds.includes(p.id)));
+              setSelectedPostIds([]);
+              setIsMultiSelectMode(false);
+              Alert.alert('Complete', `Deleted ${selectedPostIds.length} post(s) off Facebook!`);
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Bulk Delete Posts',
+        `Delete ${selectedPostIds.length} selected post(s) from app & cancel on Meta server?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete All Selected',
+            style: 'destructive',
+            onPress: async () => {
+              const { smartDeleteLoopPosts } = useCampaignStore.getState();
+              for (const pid of selectedPostIds) {
+                const target = posts.find((p) => p.id === pid);
+                if (target?.campaignId) {
+                  await smartDeleteLoopPosts(target.campaignId, [pid]);
+                } else {
+                  await deletePost(pid);
+                }
+                const fbId = target?.facebookPostId || pid;
+                if (activeFbAccount?.accessToken && fbId) {
+                  await deleteMetaScheduledPost(
+                    activeFbAccount.accessToken,
+                    fbId,
+                    activeFbAccount.pageId || 'me'
+                  );
+                }
+              }
+              setSelectedPostIds([]);
+              setIsMultiSelectMode(false);
+            },
+          },
+        ]
+      );
+    }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <TopReloadProgressBar loading={refreshing} />
       <Header title="Posts Manager" subtitle="Manage & filter scheduled posts across pages" />
 
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flex: 1, opacity: refreshing ? 0.55 : 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#1877F2']}
+            tintColor="#1877F2"
+          />
+        }
       >
         {/* Top Platform Selection Discs */}
         <View style={[styles.platformDiscsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -305,6 +502,61 @@ export default function PostsManagerScreen() {
                 ))}
               </View>
             )}
+          </View>
+        )}
+
+        {/* Source Toggle Tabs (App Queue vs Facebook Live) */}
+        {selectedPlatform === 'facebook' && (
+          <View style={styles.sourceTabsContainer}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                setPostsSource('app');
+                setIsMultiSelectMode(false);
+                setSelectedPostIds([]);
+              }}
+              style={[
+                styles.sourceTab,
+                postsSource === 'app'
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Layers size={14} color={postsSource === 'app' ? '#FFF' : colors.textSecondary} />
+              <Text
+                style={[
+                  styles.sourceTabText,
+                  postsSource === 'app' ? { color: '#FFF' } : { color: colors.textPrimary },
+                ]}
+              >
+                App Queue ({posts.filter(p => p.platforms.includes('facebook')).length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                setPostsSource('facebook_live');
+                setIsMultiSelectMode(false);
+                setSelectedPostIds([]);
+              }}
+              style={[
+                styles.sourceTab,
+                postsSource === 'facebook_live'
+                  ? { backgroundColor: '#1877F2', borderColor: '#1877F2' }
+                  : { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Facebook size={14} color={postsSource === 'facebook_live' ? '#FFF' : colors.textSecondary} />
+              <Text
+                style={[
+                  styles.sourceTabText,
+                  postsSource === 'facebook_live' ? { color: '#FFF' } : { color: colors.textPrimary },
+                ]}
+              >
+                Live Page Feed
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -445,7 +697,17 @@ export default function PostsManagerScreen() {
         </View>
 
         {/* Posts List View Area */}
-        {filteredPosts.length === 0 ? (
+        {isLoadingLive ? (
+          <View style={styles.emptyContainer}>
+            <ActivityIndicator size="large" color="#1877F2" />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary, marginTop: 12 }]}>
+              Fetching Facebook Feed...
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+              Pulling real-time published and scheduled posts from your Page.
+            </Text>
+          </View>
+        ) : filteredPosts.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Layers size={40} color={colors.textMuted} />
             <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No Posts Found</Text>
@@ -478,12 +740,42 @@ export default function PostsManagerScreen() {
                       <Image source={{ uri: activeAvatar }} style={styles.fbAvatar} />
                       <View style={{ flex: 1, marginLeft: 8 }}>
                         <Text style={[styles.fbPageName, { color: colors.textPrimary }]}>{activePageName}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Clock size={11} color={colors.textSecondary} />
-                          <Text style={[styles.fbTimeText, { color: colors.textSecondary }]}>
-                            Scheduled: {new Date(post.scheduledAt).toLocaleString()}
-                          </Text>
-                        </View>
+                        {(() => {
+                          const isFailed = post.status === 'failed' || post.status === 'missed';
+                          const isPublished = post.status === 'published' || Date.parse(post.scheduledAt) <= Date.now();
+                          const formattedDate = new Date(post.scheduledAt).toLocaleString();
+
+                          if (isFailed) {
+                            return (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <AlertCircle size={12} color="#EF4444" />
+                                <Text style={[styles.fbTimeText, { color: '#EF4444', fontWeight: '700' }]}>
+                                  Failed ({formattedDate})
+                                </Text>
+                              </View>
+                            );
+                          }
+
+                          if (isPublished) {
+                            return (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <CheckCircle2 size={12} color="#10B981" />
+                                <Text style={[styles.fbTimeText, { color: '#10B981', fontWeight: '700' }]}>
+                                  Published ({formattedDate})
+                                </Text>
+                              </View>
+                            );
+                          }
+
+                          return (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Clock size={12} color={colors.primary} />
+                              <Text style={[styles.fbTimeText, { color: colors.primary, fontWeight: '700' }]}>
+                                Scheduled: {formattedDate}
+                              </Text>
+                            </View>
+                          );
+                        })()}
                       </View>
                       <TouchableOpacity onPress={() => handleDeletePost(post)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Trash2 size={16} color="#EF4444" />
@@ -918,5 +1210,25 @@ const styles = StyleSheet.create({
   },
   listTime: {
     fontSize: 11,
+  },
+  sourceTabsContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  sourceTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  sourceTabText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
