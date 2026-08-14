@@ -32,7 +32,7 @@ interface CampaignState {
   setSelectedStatus: (status: PostStatus | 'all') => void;
   
   checkMissedPosts: () => Promise<void>;
-  triggerNextLoop: (containerId: string) => Promise<void>;
+  triggerNextLoop: (containerId: string, options?: { endType: 'media' | 'date'; endDate?: string; endTime?: string }) => Promise<void>;
   addMediaToLoopPool: (containerId: string, newUris: string[]) => Promise<void>;
   clearScheduledPostsForCampaign: (campaignId: string) => Promise<void>;
   smartDeleteLoopPosts: (containerId: string, postIds: string[]) => Promise<{ deleted: number; reclaimed: number }>;
@@ -102,6 +102,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         mentions: JSON.parse(p.mentions || '[]'),
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
+        facebookPostId: p.facebookPostId || null,
       }));
 
       // Exclude legacy mock seed campaigns so ONLY user-created containers exist
@@ -291,8 +292,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `INSERT INTO posts (id, campaignId, caption, firstComment, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO posts (id, campaignId, caption, firstComment, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, facebookPostId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           newPost.id,
           newPost.campaignId,
@@ -307,6 +308,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           newPost.failureReason,
           newPost.uploadProgress,
           JSON.stringify(newPost.tags),
+          newPost.facebookPostId || null,
           newPost.createdAt,
           newPost.updatedAt,
         ]
@@ -325,8 +327,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       const db = await getDatabase();
       for (const p of newPosts) {
         await db.runAsync(
-          `INSERT INTO posts (id, campaignId, caption, firstComment, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          `INSERT INTO posts (id, campaignId, caption, firstComment, images, videos, platforms, scheduledAt, status, notes, failureReason, uploadProgress, tags, facebookPostId, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             p.id,
             p.campaignId,
@@ -341,6 +343,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
             p.failureReason || null,
             p.uploadProgress || 0,
             JSON.stringify(p.tags || []),
+            p.facebookPostId || null,
             p.createdAt || new Date().toISOString(),
             p.updatedAt || new Date().toISOString(),
           ]
@@ -364,7 +367,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `UPDATE posts SET campaignId = ?, caption = ?, firstComment = ?, images = ?, videos = ?, platforms = ?, scheduledAt = ?, status = ?, notes = ?, failureReason = ?, uploadProgress = ?, tags = ?, updatedAt = ? WHERE id = ?;`,
+        `UPDATE posts SET campaignId = ?, caption = ?, firstComment = ?, images = ?, videos = ?, platforms = ?, scheduledAt = ?, status = ?, notes = ?, failureReason = ?, uploadProgress = ?, tags = ?, facebookPostId = ?, updatedAt = ? WHERE id = ?;`,
         [
           updated.campaignId,
           updated.caption,
@@ -378,6 +381,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           updated.failureReason,
           updated.uploadProgress,
           JSON.stringify(updated.tags),
+          updated.facebookPostId || null,
           updated.updatedAt,
           id,
         ]
@@ -417,19 +421,14 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     }));
   },
 
-  // Smart loop deletion: safely removes ONLY unpublished posts and reclaims
+  // Smart loop deletion: safely removes selected posts and reclaims
   // their media URIs back from usedMediaUris so the loop can reuse them.
   smartDeleteLoopPosts: async (containerId: string, postIds: string[]) => {
     const state = get();
     const container = state.campaigns.find((c) => c.id === containerId);
     if (!container) return { deleted: 0, reclaimed: 0 };
 
-    // Identify which posts are actually deletable (not yet published)
-    const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
-    const postsToDelete = state.posts.filter(
-      (p) => postIds.includes(p.id) && DELETABLE_STATUSES.includes(p.status)
-    );
-
+    const postsToDelete = state.posts.filter((p) => postIds.includes(p.id));
     if (postsToDelete.length === 0) return { deleted: 0, reclaimed: 0 };
 
     const deletedIds = postsToDelete.map((p) => p.id);
@@ -449,6 +448,21 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       await db.runAsync(`DELETE FROM posts WHERE id IN (${placeholders});`, deletedIds);
     } catch (e) {
       console.warn('[smartDeleteLoopPosts] DB delete fallback:', e);
+    }
+
+    // Delete from Meta Graph API if we have access token & facebookPostId
+    try {
+      const { useSocialAccountsStore } = require('./useSocialAccountsStore');
+      const { deleteMetaScheduledPost } = require('../services/facebookPublisher');
+      const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
+      if (fbAcc?.accessToken) {
+        for (const post of postsToDelete) {
+          const targetFbId = post.facebookPostId || post.id;
+          await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[smartDeleteLoopPosts] Failed to delete from Meta Graph API:', apiErr);
     }
 
     // Update in-memory posts
@@ -519,23 +533,42 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     }
   },
 
-  triggerNextLoop: async (containerId: string) => {
+  triggerNextLoop: async (containerId: string, options?: { endType: 'media' | 'date'; endDate?: string; endTime?: string }) => {
     const container = get().campaigns.find((c) => c.id === containerId);
     if (!container || !container.isLoopContainer) return;
 
-    const newRound = (container.currentLoopRound || 1) + 1;
+    // Check if the loop was fully completed (all media consumed) in the previous round
+    const wasCompleted = container.isLoopCompleted || (container.usedMediaUris || []).length >= (container.loopMediaPool || []).length;
+    
+    // Only increment the round number if we finished the previous one
+    const newRound = wasCompleted ? (container.currentLoopRound || 1) + 1 : (container.currentLoopRound || 1);
+    
+    // Carry over already used media if we haven't finished the pool yet (Option 1 behavior)
+    const initialUsedMedia = wasCompleted ? [] : (container.usedMediaUris || []);
+
     const todayISO = new Date().toISOString().split('T')[0];
     const startTime = container.startTime || '09:00';
 
+    const useDateCutoff = options?.endType === 'date';
+    const targetEndDate = useDateCutoff ? options?.endDate : undefined;
+    const targetEndTime = useDateCutoff ? (options?.endTime || '23:59') : undefined;
+
     const result = generateLoopPosts({
-      container: { ...container, currentLoopRound: newRound },
+      container: { 
+        ...container, 
+        currentLoopRound: newRound,
+        hasEndDateLimit: useDateCutoff,
+        endDate: targetEndDate,
+        endTime: targetEndTime
+      },
       loopDescriptions: container.loopDescriptions || [],
       loopMediaPool: container.loopMediaPool || [],
-      usedMediaUris: [], // Reset used media list for the new loop round!
+      usedMediaUris: initialUsedMedia, // Continue from previous used ones!
       mediaPerPost: container.mediaPerPost || 1,
       startDate: todayISO,
       startTime: startTime,
-      endDate: container.endDate,
+      endDate: targetEndDate,
+      endTime: targetEndTime,
       intervalMinutes: container.intervalMinutes || 60,
       platforms: container.platforms || ['facebook', 'instagram'],
     });
@@ -546,6 +579,9 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       currentLoopRound: newRound,
       isLoopCompleted: result.isLoopCompleted,
       startDate: todayISO,
+      hasEndDateLimit: useDateCutoff,
+      endDate: targetEndDate,
+      endTime: targetEndTime,
     };
 
     await get().updateCampaign(updatedContainer);

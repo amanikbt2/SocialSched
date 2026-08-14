@@ -10,12 +10,19 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  smartNormalizeDate,
+  smartNormalizeTime,
+} from '../../src/utils/dateTimeHelper';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
 import { useQueueStore } from '../../src/stores/useQueueStore';
+import { TopReloadProgressBar } from '../../src/components/common/TopReloadProgressBar';
 import { triggerInstantPublish } from '../../src/services/queueEngine';
 import { getContainerStatusInfo } from '../../src/utils/containerStatusHelper';
 import { deleteMetaScheduledPost } from '../../src/services/facebookPublisher';
@@ -47,6 +54,7 @@ import {
   Square,
   Trash2,
   MessageSquare,
+  X,
 } from 'lucide-react-native';
 import { AddContainerModal } from '../../src/components/container/AddContainerModal';
 
@@ -65,6 +73,16 @@ export default function ContainerDetailScreen() {
   // Multi-Select Checkboxes state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+
+  // Next Loop Options Modal states
+  const [nextLoopModalVisible, setNextLoopModalVisible] = useState(false);
+  const [nextLoopEndType, setNextLoopEndType] = useState<'media' | 'date'>('media');
+  const getTomorrowString = () => {
+    const d = new Date(Date.now() + 86400000);
+    return d.toISOString().split('T')[0];
+  };
+  const [nextLoopEndDate, setNextLoopEndDate] = useState(getTomorrowString());
+  const [nextLoopEndTime, setNextLoopEndTime] = useState('23:59');
 
   // Force Re-queue: tracks which post IDs are currently being force-processed
   const [forcingPostIds, setForcingPostIds] = useState<string[]>([]);
@@ -130,14 +148,6 @@ export default function ContainerDetailScreen() {
   }
 
   const toggleSelectPost = (postId: string) => {
-    if (container?.isLoopContainer) {
-      const targetPost = containerPosts.find((p) => p.id === postId);
-      if (targetPost && !DELETABLE_STATUSES.includes(targetPost.status)) {
-        Alert.alert('Protected Post', 'This post is already published and cannot be selected for removal.');
-        return;
-      }
-    }
-
     if (selectedPostIds.includes(postId)) {
       setSelectedPostIds(selectedPostIds.filter((pid) => pid !== postId));
     } else {
@@ -145,47 +155,23 @@ export default function ContainerDetailScreen() {
     }
   };
 
-  const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
-
   const toggleSelectAll = () => {
-    if (container?.isLoopContainer) {
-      // For loop containers: Select All only picks unpublished (safe-to-delete) posts
-      const deletable = containerPosts.filter((p) => DELETABLE_STATUSES.includes(p.status));
-      const allDeletableSelected = deletable.every((p) => selectedPostIds.includes(p.id));
-      if (allDeletableSelected && deletable.length > 0) {
-        setSelectedPostIds([]);
-      } else {
-        setSelectedPostIds(deletable.map((p) => p.id));
-      }
+    if (selectedPostIds.length === containerPosts.length) {
+      setSelectedPostIds([]);
     } else {
-      if (selectedPostIds.length === containerPosts.length) {
-        setSelectedPostIds([]);
-      } else {
-        setSelectedPostIds(containerPosts.map((p) => p.id));
-      }
+      setSelectedPostIds(containerPosts.map((p) => p.id));
     }
   };
 
   const handleDeleteSinglePost = (post: Post) => {
     const isLoop = container?.isLoopContainer;
-    const canDelete = DELETABLE_STATUSES.includes(post.status);
-
-    if (isLoop && !canDelete) {
-      Alert.alert(
-        '⚠️ Cannot Delete',
-        `This post has already been published and cannot be removed.`,
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
     const loopNote = isLoop
       ? `\n\n✅ Its media will be freed back into the pool so the loop can reuse it.`
-      : '\n\nThis will also attempt to cancel it on Meta servers.';
+      : '\n\nThis will also cancel it on Meta servers.';
 
     Alert.alert(
       isLoop ? 'Remove Loop Post' : 'Delete Post',
-      `Remove this scheduled post?${loopNote}`,
+      `Remove this post?${loopNote}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -198,7 +184,8 @@ export default function ContainerDetailScreen() {
               await deletePost(post.id);
               const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
               if (fbAcc?.accessToken) {
-                await deleteMetaScheduledPost(fbAcc.accessToken, post.id);
+                const targetFbId = post.facebookPostId || post.id;
+                await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
               }
             }
           },
@@ -212,35 +199,16 @@ export default function ContainerDetailScreen() {
 
     const isLoop = container?.isLoopContainer;
     if (isLoop) {
-      // Filter to only deletable posts among selected
-      const deletable = containerPosts.filter(
-        (p) => selectedPostIds.includes(p.id) && DELETABLE_STATUSES.includes(p.status)
-      );
-      const publishedSkipped = selectedPostIds.length - deletable.length;
-
-      if (deletable.length === 0) {
-        Alert.alert(
-          '⚠️ Nothing to Remove',
-          'All selected posts have already been published and cannot be deleted.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      const skipNote = publishedSkipped > 0
-        ? `\n\n${publishedSkipped} already-published post(s) will be skipped automatically.`
-        : '';
-
       Alert.alert(
         'Remove Loop Posts',
-        `Remove ${deletable.length} scheduled/pending post(s)? Their media will be freed back into the pool so the loop can reuse them.${skipNote}`,
+        `Remove ${selectedPostIds.length} post(s)? Their media will be freed back into the pool so the loop can reuse them.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: `Remove ${deletable.length} Post${deletable.length !== 1 ? 's' : ''} & Reclaim Media`,
+            text: `Remove ${selectedPostIds.length} Post${selectedPostIds.length !== 1 ? 's' : ''} & Reclaim Media`,
             style: 'destructive',
             onPress: async () => {
-              const result = await smartDeleteLoopPosts(container!.id, deletable.map((p) => p.id));
+              const result = await smartDeleteLoopPosts(container!.id, selectedPostIds);
               setSelectedPostIds([]);
               setIsMultiSelectMode(false);
               Alert.alert(
@@ -263,9 +231,11 @@ export default function ContainerDetailScreen() {
             onPress: async () => {
               const fbAcc = useSocialAccountsStore.getState().getAccount('facebook');
               for (const pid of selectedPostIds) {
+                const pObj = containerPosts.find((p) => p.id === pid);
                 await deletePost(pid);
-                if (fbAcc?.accessToken) {
-                  await deleteMetaScheduledPost(fbAcc.accessToken, pid);
+                if (fbAcc?.accessToken && pObj) {
+                  const targetFbId = pObj.facebookPostId || pObj.id;
+                  await deleteMetaScheduledPost(fbAcc.accessToken, targetFbId, fbAcc.pageId || 'me');
                 }
               }
               setSelectedPostIds([]);
@@ -296,6 +266,7 @@ export default function ContainerDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <TopReloadProgressBar loading={refreshing} />
       {/* Top Navigation Bar */}
       <View style={[styles.headerBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <TouchableOpacity activeOpacity={0.8} onPress={handleSafeBack} style={styles.iconBtn}>
@@ -384,14 +355,15 @@ export default function ContainerDetailScreen() {
       })()}
 
       <ScrollView
+        style={{ flex: 1, opacity: refreshing ? 0.55 : 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
+            colors={['#1877F2']}
+            tintColor="#1877F2"
           />
         }
       >
@@ -512,7 +484,14 @@ export default function ContainerDetailScreen() {
             <View style={styles.loopActionBtnsRow}>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => triggerNextLoop(container.id)}
+                onPress={() => {
+                  // Set default end date to tomorrow or next week, pre-fill end date limit
+                  setNextLoopEndDate(getTomorrowString());
+                  setNextLoopEndType(container.hasEndDateLimit ? 'date' : 'media');
+                  if (container.endDate) setNextLoopEndDate(container.endDate);
+                  if (container.endTime) setNextLoopEndTime(container.endTime);
+                  setNextLoopModalVisible(true);
+                }}
                 style={[styles.nextLoopMainBtn, { backgroundColor: '#10B981' }]}
               >
                 <Repeat size={14} color="#FFFFFF" />
@@ -814,6 +793,193 @@ export default function ContainerDetailScreen() {
         onClose={() => setEditModalVisible(false)}
         existingContainer={container}
       />
+
+      {/* Next Loop Configuration Modal */}
+      <Modal
+        visible={nextLoopModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setNextLoopModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.background, width: '92%', maxWidth: 440 }]}>
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Repeat size={20} color="#10B981" />
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                  Next Loop Round {(container.currentLoopRound || 1) + 1}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setNextLoopModalVisible(false)}
+                style={{ padding: 4 }}
+              >
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 16, lineHeight: 18 }}>
+                Configure how to terminate the scheduling for this upcoming loop round.
+              </Text>
+
+              {/* Option 1: End by Media Pool Completion */}
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => setNextLoopEndType('media')}
+                style={[
+                  styles.optionCard,
+                  {
+                    backgroundColor: nextLoopEndType === 'media' ? '#10B98115' : colors.surfaceVariant,
+                    borderColor: nextLoopEndType === 'media' ? '#10B981' : colors.border,
+                    borderWidth: 1.5,
+                  },
+                ]}
+              >
+                <View style={styles.optionHeaderRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <CheckSquare
+                      size={18}
+                      color={nextLoopEndType === 'media' ? '#10B981' : colors.textSecondary}
+                    />
+                    <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>
+                      Complete Media Pool
+                    </Text>
+                  </View>
+                  <Sparkles size={16} color="#10B981" />
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4, lineHeight: 16 }}>
+                  Schedule posts continuously until all media in the pool are utilized. Ignores date limitations.
+                </Text>
+              </TouchableOpacity>
+
+              {/* Option 2: Hard Stop Date & Time */}
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => setNextLoopEndType('date')}
+                style={[
+                  styles.optionCard,
+                  {
+                    backgroundColor: nextLoopEndType === 'date' ? '#10B98115' : colors.surfaceVariant,
+                    borderColor: nextLoopEndType === 'date' ? '#10B981' : colors.border,
+                    borderWidth: 1.5,
+                    marginTop: 12,
+                  },
+                ]}
+              >
+                <View style={styles.optionHeaderRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <CheckSquare
+                      size={18}
+                      color={nextLoopEndType === 'date' ? '#10B981' : colors.textSecondary}
+                    />
+                    <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>
+                      Hard Stop Date & Time
+                    </Text>
+                  </View>
+                  <Clock size={16} color="#3B82F6" />
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4, lineHeight: 16 }}>
+                  Stop scheduling immediately when reaching a specified date and time, even if media items remain.
+                </Text>
+              </TouchableOpacity>
+
+              {/* Date & Time fields if Hard Stop is chosen */}
+              {nextLoopEndType === 'date' && (
+                <View style={[styles.dateFormBox, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}>
+                    Define Hard Cutoff:
+                  </Text>
+
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {/* Date Input */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
+                        Stop Date (YYYY-MM-DD)
+                      </Text>
+                      <View style={[styles.modalInputBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <TextInput
+                          value={nextLoopEndDate}
+                          onChangeText={setNextLoopEndDate}
+                          onBlur={() => setNextLoopEndDate(smartNormalizeDate(nextLoopEndDate))}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor={colors.textMuted}
+                          style={{ color: colors.textPrimary, fontSize: 13, paddingVertical: 6 }}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Time Input */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
+                        Stop Time (HH:MM)
+                      </Text>
+                      <View style={[styles.modalInputBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <TextInput
+                          value={nextLoopEndTime}
+                          onChangeText={setNextLoopEndTime}
+                          onBlur={() => setNextLoopEndTime(smartNormalizeTime(nextLoopEndTime))}
+                          placeholder="23:59"
+                          placeholderTextColor={colors.textMuted}
+                          style={{ color: colors.textPrimary, fontSize: 13, paddingVertical: 6 }}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Confirm Actions */}
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                onPress={() => setNextLoopModalVisible(false)}
+                style={[styles.modalBtn, { backgroundColor: colors.surfaceVariant }]}
+              >
+                <Text style={{ color: colors.textPrimary, fontWeight: '600', fontSize: 13 }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  if (nextLoopEndType === 'date') {
+                    const cleanD = smartNormalizeDate(nextLoopEndDate);
+                    const cleanT = smartNormalizeTime(nextLoopEndTime);
+                    const parsed = Date.parse(`${cleanD}T${cleanT}:00`);
+                    if (isNaN(parsed)) {
+                      Alert.alert('Invalid Date/Time', 'Please use YYYY-MM-DD and HH:MM format.');
+                      return;
+                    }
+                    if (parsed <= Date.now()) {
+                      Alert.alert('Past Date/Time', 'Cutoff date/time must be in the future.');
+                      return;
+                    }
+
+                    setNextLoopModalVisible(false);
+                    await triggerNextLoop(container.id, {
+                      endType: 'date',
+                      endDate: cleanD,
+                      endTime: cleanT,
+                    });
+                  } else {
+                    setNextLoopModalVisible(false);
+                    await triggerNextLoop(container.id, {
+                      endType: 'media',
+                    });
+                  }
+                }}
+                style={[styles.modalBtn, { backgroundColor: '#10B981' }]}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+                  Generate Round {(container.currentLoopRound || 1) + 1}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1238,5 +1404,71 @@ const styles = StyleSheet.create({
   expandedDeleteBtnText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    borderRadius: 20,
+    padding: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  optionCard: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  optionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  optionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dateFormBox: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  modalInputBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    marginTop: 4,
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 20,
+  },
+  modalBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
