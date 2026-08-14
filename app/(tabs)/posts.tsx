@@ -11,6 +11,7 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
