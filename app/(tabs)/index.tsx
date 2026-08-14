@@ -140,7 +140,7 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TopReloadProgressBar loading={refreshing} />
-      <Header title="SyncFlow" subtitle="Android Batch Scheduler" />
+      <Header title="Smartflow" subtitle="Android Batch Scheduler" />
 
       <ScrollView
         style={{ flex: 1, opacity: refreshing ? 0.55 : 1 }}

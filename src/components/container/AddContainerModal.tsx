@@ -619,7 +619,6 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
       setIsSubmitting(false);
     }
   };
-  };
 
 
 

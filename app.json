@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "SyncFlow",
-    "slug": "syncflow",
+    "name": "Smartflow",
+    "slug": "smartflow",
     "owner": "sliver1",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "syncflow",
+    "scheme": "smartflow",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
@@ -20,10 +20,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F1115"
+        "backgroundColor": "#000000"
       },
       "edgeToEdge": "enabled",
-      "package": "com.sliver1.syncflow"
+      "package": "com.sliver1.smartflow"
     },
     "web": {
       "bundler": "metro",
