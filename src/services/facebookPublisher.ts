@@ -555,6 +555,12 @@ export async function deleteMetaScheduledPost(
   if (!cleanToken || !postId) return false;
 
   const cleanPostId = postId.trim();
+
+  // Synthetic local IDs (post_...) don't exist on Meta server yet — return true immediately
+  if (cleanPostId.startsWith('post_') || cleanPostId.startsWith('post-')) {
+    return true;
+  }
+
   const targetId = pageId && pageId !== 'me' ? pageId : '';
 
   // 1. Primary Direct DELETE by ID (DELETE https://graph.facebook.com/v19.0/{postId})

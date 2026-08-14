@@ -153,9 +153,11 @@ export default function PostsManagerScreen() {
     setRefreshing(false);
   }, [loadData, loadSavedAccounts, selectedPlatform, postsSource, activePageId]);
 
-  // Multi-select state
+  // Multi-select & deletion progress state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+  const [deletingPostIds, setDeletingPostIds] = useState<string[]>([]);
+  const [deletionProgress, setDeletionProgress] = useState({ total: 0, done: 0, isDeleting: false });
 
   // Filtered Posts
   const displayedPosts = postsSource === 'facebook_live' ? facebookLivePosts : posts;
@@ -223,155 +225,139 @@ export default function PostsManagerScreen() {
 
   // Delete Single Post
   const handleDeletePost = (post: Post) => {
-    if (postsSource === 'facebook_live') {
-      Alert.alert(
-        'Delete Live Post',
-        'Are you sure you want to delete this post directly off your Facebook Page feed/schedule?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete from Facebook',
-            style: 'destructive',
-            onPress: async () => {
-              const fbId = post.facebookPostId || post.id;
-              if (activeFbAccount?.accessToken && fbId) {
-                const ok = await deleteMetaScheduledPost(
-                  activeFbAccount.accessToken,
-                  fbId,
-                  activeFbAccount.pageId || 'me'
-                );
-                if (ok) {
-                  const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
-                  if (localMatch) {
-                    await deletePost(localMatch.id);
-                  }
-                  setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
-                  Alert.alert('Success', 'Post successfully deleted from Facebook Page!');
-                } else {
-                  // Even if Meta API rejected (e.g. post already deleted on FB), remove locally
-                  setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
-                  const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
-                  if (localMatch) {
-                    await deletePost(localMatch.id);
-                  }
-                  Alert.alert('Removed', 'Post removed from your list.');
-                }
-              }
-            },
-          },
-        ]
-      );
-    } else {
-      Alert.alert(
-        'Delete Post',
-        'Are you sure you want to delete this post from the container and cancel it on Meta server?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete Post',
-            style: 'destructive',
-            onPress: async () => {
-              if (post.campaignId) {
-                const { smartDeleteLoopPosts } = useCampaignStore.getState();
-                await smartDeleteLoopPosts(post.campaignId, [post.id]);
-              } else {
-                await deletePost(post.id);
-              }
-              const fbId = post.facebookPostId || post.id;
-              if (activeFbAccount?.accessToken && fbId) {
-                await deleteMetaScheduledPost(
-                  activeFbAccount.accessToken,
-                  fbId,
-                  activeFbAccount.pageId || 'me'
-                );
-              }
-            },
-          },
-        ]
-      );
-    }
+    const isLive = postsSource === 'facebook_live';
+    const alertTitle = isLive ? 'Delete Live Post' : 'Delete Post';
+    const alertMsg = isLive
+      ? 'Are you sure you want to delete this post directly off your Facebook Page feed/schedule?'
+      : 'Are you sure you want to delete this post from the container and cancel it on Meta server?';
+
+    Alert.alert(alertTitle, alertMsg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingPostIds((prev) => [...prev, post.id]);
+          const fbId = post.facebookPostId || post.id;
+
+          if (activeFbAccount?.accessToken && fbId) {
+            await deleteMetaScheduledPost(
+              activeFbAccount.accessToken,
+              fbId,
+              activeFbAccount.pageId || 'me'
+            );
+          }
+
+          if (isLive) {
+            setFacebookLivePosts((prev) => prev.filter((p) => p.id !== post.id));
+            const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === post.id);
+            if (localMatch) {
+              await deletePost(localMatch.id);
+            }
+          } else {
+            if (post.campaignId) {
+              const { smartDeleteLoopPosts } = useCampaignStore.getState();
+              await smartDeleteLoopPosts(post.campaignId, [post.id]);
+            } else {
+              await deletePost(post.id);
+            }
+          }
+
+          setDeletingPostIds((prev) => prev.filter((id) => id !== post.id));
+        },
+      },
+    ]);
   };
 
   // Bulk Delete
   const handleBulkDelete = () => {
     if (selectedPostIds.length === 0) return;
-    if (postsSource === 'facebook_live') {
-      Alert.alert(
-        'Bulk Delete Live Posts',
-        `Are you sure you want to delete ${selectedPostIds.length} selected post(s) directly off your Facebook Page feed/schedule?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete All Selected',
-            style: 'destructive',
-            onPress: async () => {
-              let successCount = 0;
-              if (activeFbAccount?.accessToken) {
-                for (const pid of selectedPostIds) {
-                  const targetPost = facebookLivePosts.find((p) => p.id === pid);
+    const count = selectedPostIds.length;
+    const isLive = postsSource === 'facebook_live';
+
+    Alert.alert(
+      `Delete ${count} Post${count !== 1 ? 's' : ''}`,
+      `Are you sure you want to delete ${count} post(s)? They will be removed from your app and canceled on Meta servers.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete ${count} Post${count !== 1 ? 's' : ''}`,
+          style: 'destructive',
+          onPress: async () => {
+            setDeletionProgress({ total: count, done: 0, isDeleting: true });
+            setDeletingPostIds(selectedPostIds);
+
+            const targetIds = [...selectedPostIds];
+            const CHUNK_SIZE = 5;
+            let completed = 0;
+
+            for (let i = 0; i < targetIds.length; i += CHUNK_SIZE) {
+              const chunk = targetIds.slice(i, i + CHUNK_SIZE);
+              await Promise.all(
+                chunk.map(async (pid) => {
+                  const targetPost = displayedPosts.find((p) => p.id === pid);
                   if (targetPost) {
                     const fbId = targetPost.facebookPostId || targetPost.id;
-                    const ok = await deleteMetaScheduledPost(
-                      activeFbAccount.accessToken,
-                      fbId,
-                      activeFbAccount.pageId || 'me'
-                    );
-                    if (ok) successCount++;
-                    const localMatch = posts.find((p) => p.facebookPostId === fbId || p.id === targetPost.id);
-                    if (localMatch) {
-                      await deletePost(localMatch.id);
+                    if (activeFbAccount?.accessToken && fbId) {
+                      await deleteMetaScheduledPost(
+                        activeFbAccount.accessToken,
+                        fbId,
+                        activeFbAccount.pageId || 'me'
+                      );
+                    }
+                    if (targetPost.campaignId) {
+                      const { smartDeleteLoopPosts } = useCampaignStore.getState();
+                      await smartDeleteLoopPosts(targetPost.campaignId, [pid]);
+                    } else {
+                      await deletePost(pid);
                     }
                   }
-                }
-              }
-              setFacebookLivePosts((prev) => prev.filter((p) => !selectedPostIds.includes(p.id)));
-              setSelectedPostIds([]);
-              setIsMultiSelectMode(false);
-              Alert.alert('Complete', `Deleted ${selectedPostIds.length} post(s) off Facebook!`);
-            },
+                  if (isLive) {
+                    setFacebookLivePosts((prev) => prev.filter((p) => p.id !== pid));
+                  }
+                  completed++;
+                  setDeletionProgress((prev) => ({ ...prev, done: completed }));
+                })
+              );
+            }
+
+            setDeletingPostIds([]);
+            setSelectedPostIds([]);
+            setIsMultiSelectMode(false);
+            setDeletionProgress({ total: 0, done: 0, isDeleting: false });
           },
-        ]
-      );
-    } else {
-      Alert.alert(
-        'Bulk Delete Posts',
-        `Delete ${selectedPostIds.length} selected post(s) from app & cancel on Meta server?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete All Selected',
-            style: 'destructive',
-            onPress: async () => {
-              const { smartDeleteLoopPosts } = useCampaignStore.getState();
-              for (const pid of selectedPostIds) {
-                const target = posts.find((p) => p.id === pid);
-                if (target?.campaignId) {
-                  await smartDeleteLoopPosts(target.campaignId, [pid]);
-                } else {
-                  await deletePost(pid);
-                }
-                const fbId = target?.facebookPostId || pid;
-                if (activeFbAccount?.accessToken && fbId) {
-                  await deleteMetaScheduledPost(
-                    activeFbAccount.accessToken,
-                    fbId,
-                    activeFbAccount.pageId || 'me'
-                  );
-                }
-              }
-              setSelectedPostIds([]);
-              setIsMultiSelectMode(false);
-            },
-          },
-        ]
-      );
-    }
+        },
+      ]
+    );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TopReloadProgressBar loading={refreshing} />
       <Header title="Posts Manager" subtitle="Manage & filter scheduled posts across pages" />
+
+      {/* Smart Real-Time Deletion Progress Bar */}
+      {deletionProgress.isDeleting && (
+        <View style={[styles.deletionBarCard, { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator size="small" color="#EF4444" />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444' }}>
+                Deleting posts... {deletionProgress.done} / {deletionProgress.total} ({Math.round((deletionProgress.done / Math.max(1, deletionProgress.total)) * 100)}%)
+              </Text>
+            </View>
+          </View>
+          <View style={{ height: 5, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 3, overflow: 'hidden' }}>
+            <View
+              style={{
+                height: '100%',
+                backgroundColor: '#EF4444',
+                width: `${(deletionProgress.done / Math.max(1, deletionProgress.total)) * 100}%`,
+              }}
+            />
+          </View>
+        </View>
+      )}
 
       <ScrollView
         style={{ flex: 1, opacity: refreshing ? 0.55 : 1 }}
@@ -777,9 +763,16 @@ export default function PostsManagerScreen() {
                           );
                         })()}
                       </View>
-                      <TouchableOpacity onPress={() => handleDeletePost(post)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Trash2 size={16} color="#EF4444" />
-                      </TouchableOpacity>
+                      {deletingPostIds.includes(post.id) ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <ActivityIndicator size="small" color="#EF4444" />
+                          <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '700' }}>Deleting...</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity onPress={() => handleDeletePost(post)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Trash2 size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     <Text style={[styles.fbCaption, { color: colors.textPrimary }]}>{post.caption}</Text>
@@ -824,9 +817,13 @@ export default function PostsManagerScreen() {
                       <Text style={[styles.statusBadge, post.status === 'published' ? styles.statusPub : styles.statusSched]}>
                         {post.status.toUpperCase()}
                       </Text>
-                      <TouchableOpacity onPress={() => handleDeletePost(post)} style={{ marginLeft: 'auto' }}>
-                        <Trash2 size={15} color="#EF4444" />
-                      </TouchableOpacity>
+                      {deletingPostIds.includes(post.id) ? (
+                        <ActivityIndicator size="small" color="#EF4444" style={{ marginLeft: 'auto' }} />
+                      ) : (
+                        <TouchableOpacity onPress={() => handleDeletePost(post)} style={{ marginLeft: 'auto' }}>
+                          <Trash2 size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     {post.images && post.images.length > 0 && (
@@ -865,9 +862,13 @@ export default function PostsManagerScreen() {
                   <Text style={[styles.listTime, { color: colors.textSecondary }]}>
                     {new Date(post.scheduledAt).toLocaleDateString()} {new Date(post.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
-                  <TouchableOpacity onPress={() => handleDeletePost(post)} style={{ marginLeft: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Trash2 size={14} color="#EF4444" />
-                  </TouchableOpacity>
+                  {deletingPostIds.includes(post.id) ? (
+                    <ActivityIndicator size="small" color="#EF4444" style={{ marginLeft: 8 }} />
+                  ) : (
+                    <TouchableOpacity onPress={() => handleDeletePost(post)} style={{ marginLeft: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Trash2 size={14} color="#EF4444" />
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })}
@@ -881,6 +882,12 @@ export default function PostsManagerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  deletionBarCard: {
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderRadius: 14,
   },
   platformDiscsRow: {
     flexDirection: 'row',
