@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+declare const window: any;
 import {
   View,
   Text,
@@ -13,6 +14,8 @@ import {
   Modal,
   TextInput,
   Platform,
+  FlatList,
+  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -59,6 +62,8 @@ import {
 } from 'lucide-react-native';
 import { AddContainerModal } from '../../src/components/container/AddContainerModal';
 import Svg, { Circle } from 'react-native-svg';
+
+const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
 
 // Custom circular progress component
 interface UploadProgressCircleProps {
@@ -152,8 +157,6 @@ const UploadProgressCircle: React.FC<UploadProgressCircleProps> = ({ progress })
   );
 };
 
-const DELETABLE_STATUSES = ['scheduled', 'waiting', 'failed', 'missed'];
-
 export default function ContainerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -173,6 +176,11 @@ export default function ContainerDetailScreen() {
   // Next Loop Options Modal states
   const [nextLoopModalVisible, setNextLoopModalVisible] = useState(false);
   const [nextLoopEndType, setNextLoopEndType] = useState<'media' | 'date'>('media');
+  
+  // Media Pool Grid Modal states
+  const [mediaPoolModalVisible, setMediaPoolModalVisible] = useState(false);
+  const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
+  const [mediaPoolTab, setMediaPoolTab] = useState<'all' | 'fresh' | 'used'>('all');
   const getTomorrowString = () => {
     const d = new Date(Date.now() + 86400000);
     return d.toISOString().split('T')[0];
@@ -552,12 +560,16 @@ export default function ContainerDetailScreen() {
                 </Text>
                 <Text style={[styles.loopMetricLabel, { color: colors.textSecondary }]}>Current Round</Text>
               </View>
-              <View style={styles.loopMetricCell}>
-                <Text style={[styles.loopMetricVal, { color: colors.textPrimary }]}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setMediaPoolModalVisible(true)}
+                style={styles.loopMetricCell}
+              >
+                <Text style={[styles.loopMetricVal, { color: colors.primary }]}>
                   {container.loopMediaPool?.length || 0}
                 </Text>
-                <Text style={[styles.loopMetricLabel, { color: colors.textSecondary }]}>Media Pool</Text>
-              </View>
+                <Text style={[styles.loopMetricLabel, { color: colors.textSecondary, textDecorationLine: 'underline' }]}>Media Pool</Text>
+              </TouchableOpacity>
               <View style={styles.loopMetricCell}>
                 <Text style={[styles.loopMetricVal, { color: colors.textPrimary }]}>
                   {container.usedMediaUris?.length || 0}
@@ -687,46 +699,34 @@ export default function ContainerDetailScreen() {
                       <Text style={[styles.numBadgeText, { color: colors.primary }]}>#{index + 1}</Text>
                     </View>
                   )}
-
                   <View style={styles.headerTitleCol}>
                     {/* Top/Left Scheduled Time Pill or Status Pill */}
                     {isFailedOrConnectionIssue ? (
                       <View style={[styles.scheduledPill, { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }]}>
                         <AlertCircle size={11} color="#EF4444" />
-                        <Text style={[styles.scheduledPillText, { color: '#EF4444', fontWeight: '800' }]}>
-                          Internet / Upload Issue
-                        </Text>
+                        <Text style={[styles.scheduledPillText, { color: '#EF4444', fontWeight: '800' }]}>{'Internet / Upload Issue'}</Text>
                       </View>
                     ) : isPastOrPublished ? (
                       <View style={[styles.scheduledPill, { backgroundColor: '#10B98118', borderColor: '#10B981', borderWidth: 1 }]}>
                         <CheckCircle2 size={11} color="#10B981" />
-                        <Text style={[styles.scheduledPillText, { color: '#10B981', fontWeight: '800' }]}>
-                          Published ✔
-                        </Text>
+                        <Text style={[styles.scheduledPillText, { color: '#10B981', fontWeight: '800' }]}>{'Published \u2714'}</Text>
                       </View>
                     ) : (
                       <View style={[styles.scheduledPill, { backgroundColor: colors.primaryContainer }]}>
                         <Clock size={10} color={colors.primary} />
-                        <Text style={[styles.scheduledPillText, { color: colors.primary }]}>
-                          {formattedSchedule}
-                        </Text>
+                        <Text style={[styles.scheduledPillText, { color: colors.primary }]}>{formattedSchedule}</Text>
                         <Globe size={10} color={colors.success} />
                       </View>
                     )}
-
-                    <Text style={[styles.minimizedTitleText, { color: colors.textPrimary }]}>
-                      {getFirst5Words(post.caption)}
-                    </Text>
+                    <Text style={[styles.minimizedTitleText, { color: colors.textPrimary }]}>{getFirst5Words(post.caption)}</Text>
                   </View>
                 </View>
-
                 <View style={styles.minimizedRight}>
                   {post.images && post.images.length > 0 && (
                     <Text style={[styles.mediaBadgeText, { color: colors.textSecondary }]}>
-                      📷 {post.images.length}
+                      {'\ud83d\udcf7 ' + post.images.length}
                     </Text>
                   )}
-
                   {/* Force Re-queue button for stuck posts */}
                   {!isMultiSelectMode && isStuck && (
                     <TouchableOpacity
@@ -741,7 +741,6 @@ export default function ContainerDetailScreen() {
                       <RefreshCw size={13} color={colors.warning} />
                     </TouchableOpacity>
                   )}
-
                   {/* Spinning upload indicator */}
                   {isActive ? (
                     <UploadProgressCircle progress={post.uploadProgress || 0} />
@@ -769,12 +768,11 @@ export default function ContainerDetailScreen() {
                   )}
                 </View>
               </TouchableOpacity>
-
               {/* Internet Upload Failure & Retry Button Row */}
               {isFailedOrConnectionIssue && (
                 <View style={[styles.failureRetryBox, { backgroundColor: '#EF444410', borderColor: '#EF444440' }]}>
                   <Text style={styles.failureReasonText} numberOfLines={1}>
-                    ⚠️ {post.failureReason || 'Post failed due to network / internet connectivity'}
+                    {'\u26a0\ufe0f ' + (post.failureReason || 'Post failed due to network / internet connectivity')}
                   </Text>
                   <TouchableOpacity
                     activeOpacity={0.8}
@@ -790,41 +788,29 @@ export default function ContainerDetailScreen() {
                     style={styles.retryBtn}
                   >
                     <RefreshCw size={12} color="#FFFFFF" />
-                    <Text style={styles.retryBtnText}>Retry Upload</Text>
+                    <Text style={styles.retryBtnText}>{'Retry Upload'}</Text>
                   </TouchableOpacity>
                 </View>
               )}
-
               {/* Expanded Real Post Preview */}
               {isExpanded && (
                 <View style={[styles.expandedBody, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.fullCaption, { color: colors.textPrimary }]}>
-                    {post.caption}
-                  </Text>
-
+                  <Text style={[styles.fullCaption, { color: colors.textPrimary }]}>{post.caption}</Text>
                   {/* Hashtags & Mentions Pills */}
                   {(() => {
                     const postHashtags = post.hashtags && post.hashtags.length > 0 ? post.hashtags : extractHashtags(post.caption);
                     const postMentions = post.mentions && post.mentions.length > 0 ? post.mentions : extractMentions(post.caption);
                     if (postHashtags.length === 0 && postMentions.length === 0) return null;
-
                     return (
                       <View style={styles.tagsRow}>
                         {postHashtags.map((tag) => (
-                          <View
-                            key={tag}
-                            style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}
-                          >
+                          <View key={tag} style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}>
                             <Tag size={10} color={colors.primary} />
                             <Text style={[styles.tagText, { color: colors.primary }]}>{tag}</Text>
                           </View>
                         ))}
-
                         {postMentions.map((men) => (
-                          <View
-                            key={men}
-                            style={[styles.tagPill, { backgroundColor: '#3B82F618', borderColor: '#3B82F640', borderWidth: 1 }]}
-                          >
+                          <View key={men} style={[styles.tagPill, { backgroundColor: '#3B82F618', borderColor: '#3B82F640', borderWidth: 1 }]}>
                             <AtSign size={10} color="#3B82F6" />
                             <Text style={[styles.tagText, { color: '#3B82F6', fontWeight: '800' }]}>{men}</Text>
                           </View>
@@ -832,32 +818,28 @@ export default function ContainerDetailScreen() {
                       </View>
                     );
                   })()}
-
                   {/* First Comment Box */}
-                  {post.firstComment && post.firstComment.trim() !== '' && (
+                  {!!post.firstComment && post.firstComment.trim() !== '' && (
                     <View style={{ backgroundColor: colors.primaryContainer + '20', borderColor: colors.primary + '50', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, marginBottom: 4 }}>
                         <MessageSquare size={12} color={colors.primary} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>FIRST COMMENT</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>{'FIRST COMMENT'}</Text>
                       </View>
                       <Text style={{ fontSize: 12, color: colors.textPrimary, lineHeight: 16 }}>{post.firstComment}</Text>
                     </View>
                   )}
-
                   {/* Facebook Multi-Image Grid View */}
                   {post.images && post.images.length > 0 && (
                     <FacebookMediaGrid images={post.images} />
                   )}
-
                   {/* Scheduled Time info & Delete button */}
                   <View style={styles.scheduleInfoRow}>
                     <View style={styles.scheduleInfoLeft}>
                       <Clock size={12} color={colors.textSecondary} />
                       <Text style={[styles.scheduleInfoText, { color: colors.textSecondary }]}>
-                        Scheduled for {new Date(post.scheduledAt).toLocaleString()}
+                        {'Scheduled for ' + new Date(post.scheduledAt).toLocaleString()}
                       </Text>
                     </View>
-
                     {(!container?.isLoopContainer || DELETABLE_STATUSES.includes(post.status)) && (
                       <TouchableOpacity
                         activeOpacity={0.8}
@@ -865,7 +847,7 @@ export default function ContainerDetailScreen() {
                         style={[styles.expandedDeleteBtn, { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }]}
                       >
                         <Trash2 size={12} color="#EF4444" />
-                        <Text style={[styles.expandedDeleteBtnText, { color: '#EF4444' }]}>Delete</Text>
+                        <Text style={[styles.expandedDeleteBtnText, { color: '#EF4444' }]}>{'Delete'}</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -894,7 +876,7 @@ export default function ContainerDetailScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.background, width: '92%', maxWidth: 440 }]}>
             {/* Modal Header */}
             <View style={styles.modalHeaderRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
                 <Repeat size={20} color="#10B981" />
                 <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
                   Next Loop Round {(container.currentLoopRound || 1) + 1}
@@ -927,7 +909,7 @@ export default function ContainerDetailScreen() {
                 ]}
               >
                 <View style={styles.optionHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
                     <CheckSquare
                       size={18}
                       color={nextLoopEndType === 'media' ? '#10B981' : colors.textSecondary}
@@ -958,7 +940,7 @@ export default function ContainerDetailScreen() {
                 ]}
               >
                 <View style={styles.optionHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
                     <CheckSquare
                       size={18}
                       color={nextLoopEndType === 'date' ? '#10B981' : colors.textSecondary}
@@ -981,7 +963,7 @@ export default function ContainerDetailScreen() {
                     Define Hard Cutoff:
                   </Text>
 
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flexDirection: 'row', columnGap: 12 }}>
                     {/* Date Input */}
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 4 }}>
@@ -1066,6 +1048,183 @@ export default function ContainerDetailScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Media Pool Grid Modal */}
+      <Modal
+        visible={mediaPoolModalVisible}
+        animationType="slide"
+        onRequestClose={() => setMediaPoolModalVisible(false)}
+      >
+        <View style={[styles.fullScreenModalContainer, { backgroundColor: colors.background }]}>
+          {/* Header */}
+          <View style={[styles.fullScreenModalHeader, { borderBottomColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Layers size={20} color={colors.primary} />
+              <Text style={[styles.fullScreenModalTitle, { color: colors.textPrimary }]}>
+                {'Media Pool (' + (container.loopMediaPool?.length || 0) + ')'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setMediaPoolModalVisible(false)}
+              style={styles.closeBtn}
+            >
+              <X size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Tabs Row */}
+          {(() => {
+            const pool = container.loopMediaPool || [];
+            const usedSet = new Set(container.usedMediaUris || []);
+            const freshCount = pool.filter(u => !usedSet.has(u)).length;
+            const usedCount = pool.filter(u => usedSet.has(u)).length;
+            const tabs: { key: 'all' | 'fresh' | 'used'; label: string; count: number; color: string }[] = [
+              { key: 'all',   label: 'All',          count: pool.length, color: colors.primary },
+              { key: 'fresh', label: 'Start Media',  count: freshCount,  color: '#8B5CF6' },
+              { key: 'used',  label: 'End Media',    count: usedCount,   color: '#10B981' },
+            ];
+            return (
+              <View style={[styles.mediaPoolTabRow, { borderBottomColor: colors.border }]}>
+                {tabs.map(tab => {
+                  const isActive = mediaPoolTab === tab.key;
+                  return (
+                    <TouchableOpacity
+                      key={tab.key}
+                      activeOpacity={0.8}
+                      onPress={() => setMediaPoolTab(tab.key)}
+                      style={[
+                        styles.mediaPoolTab,
+                        isActive && { borderBottomColor: tab.color, borderBottomWidth: 2.5 },
+                      ]}
+                    >
+                      <Text style={[
+                        styles.mediaPoolTabLabel,
+                        { color: isActive ? tab.color : colors.textSecondary },
+                      ]}>
+                        {tab.label}
+                      </Text>
+                      <View style={[
+                        styles.mediaPoolTabBadge,
+                        { backgroundColor: isActive ? tab.color : colors.surfaceVariant },
+                      ]}>
+                        <Text style={[
+                          styles.mediaPoolTabBadgeText,
+                          { color: isActive ? '#FFFFFF' : colors.textMuted },
+                        ]}>
+                          {tab.count}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            );
+          })()}
+
+          {/* Grid Content */}
+          {(() => {
+            const pool = container.loopMediaPool || [];
+            const usedSet = new Set(container.usedMediaUris || []);
+            const filteredPool =
+              mediaPoolTab === 'fresh' ? pool.filter(u => !usedSet.has(u)) :
+              mediaPoolTab === 'used'  ? pool.filter(u => usedSet.has(u)) :
+              pool;
+
+            if (filteredPool.length === 0) {
+              return (
+                <View style={styles.emptyGridState}>
+                  <View style={{ marginBottom: 12 }}>
+                    <Layers size={48} color={colors.textMuted} />
+                  </View>
+                  <Text style={[styles.emptyGridText, { color: colors.textSecondary }]}>
+                    {mediaPoolTab === 'fresh'
+                      ? 'No fresh media remaining.'
+                      : mediaPoolTab === 'used'
+                      ? 'No used media yet.'
+                      : 'No media files in this loop pool.'}
+                  </Text>
+                </View>
+              );
+            }
+
+            return (
+              <FlatList
+                data={filteredPool}
+                keyExtractor={(item, index) => `${item}-${index}`}
+                numColumns={3}
+                contentContainerStyle={styles.gridContentContainer}
+                renderItem={({ item: uri }) => {
+                  const isUsed = usedSet.has(uri);
+                  const isVideo =
+                    uri.toLowerCase().endsWith('.mp4') ||
+                    uri.toLowerCase().endsWith('.mov') ||
+                    uri.toLowerCase().endsWith('.mkv') ||
+                    uri.toLowerCase().endsWith('.webm');
+                  return (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() => setSelectedMediaUri(uri)}
+                      style={[
+                        styles.gridMediaCell,
+                        {
+                          borderColor: isUsed ? '#10B981' : '#8B5CF6',
+                          borderWidth: 1.5,
+                        },
+                      ]}
+                    >
+                      <Image source={{ uri }} style={styles.gridMediaImage} resizeMode="cover" />
+                      {isVideo && (
+                        <View style={styles.videoOverlayBadge}>
+                          <Play size={12} color="#FFFFFF" fill="#FFFFFF" />
+                        </View>
+                      )}
+                      <View style={[
+                        styles.usedStatusBadge,
+                        { backgroundColor: isUsed ? '#10B981' : '#8B5CF6' },
+                      ]}>
+                        {isUsed
+                          ? <CheckCircle2 size={11} color="#FFFFFF" fill="#10B981" />
+                          : <Sparkles size={11} color="#FFFFFF" />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            );
+          })()}
+        </View>
+      </Modal>
+
+      {/* Full-Screen Single Media Preview Modal */}
+      <Modal
+        visible={!!selectedMediaUri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedMediaUri(null)}
+      >
+        <View style={styles.previewOverlay}>
+          <TouchableOpacity 
+            style={StyleSheet.absoluteFillObject} 
+            activeOpacity={1} 
+            onPress={() => setSelectedMediaUri(null)} 
+          />
+          <View style={styles.previewContainer}>
+            {!!selectedMediaUri && (
+              <Image 
+                source={{ uri: selectedMediaUri }} 
+                style={styles.previewImage} 
+                resizeMode="contain" 
+              />
+            )}
+            <TouchableOpacity
+              style={styles.previewCloseBtn}
+              onPress={() => setSelectedMediaUri(null)}
+            >
+              <X size={24} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1557,6 +1716,147 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenModalContainer: {
+    flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+  },
+  fullScreenModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  fullScreenModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  gridContentContainer: {
+    padding: 8,
+    paddingBottom: 40,
+  },
+  gridMediaCell: {
+    width: '31.3%',
+    aspectRatio: 1,
+    margin: '1%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+  },
+  gridMediaImage: {
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlayBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  usedStatusBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+  },
+  mediaPoolTabRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    borderBottomWidth: 1,
+    height: 48,
+    alignItems: 'stretch',
+  },
+  mediaPoolTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
+  },
+  mediaPoolTabLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mediaPoolTabBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 20,
+  },
+  mediaPoolTabBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  emptyGridState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  emptyGridText: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewContainer: {
+    width: '92%',
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewCloseBtn: {
+    position: 'absolute',
+    top: -50,
+    right: 10,
+    padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 22,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

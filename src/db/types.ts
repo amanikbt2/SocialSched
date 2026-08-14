@@ -42,6 +42,10 @@ export interface Campaign {
   skipTimeRanges?: SkipTimeRange[];
   enableFirstComment?: boolean;
   firstComment?: string;
+  startMediaUri?: string | null;
+  startMediaOriginalUri?: string | null;
+  endMediaUri?: string | null;
+  endMediaOriginalUri?: string | null;
 }
 
 // Alias Container to Campaign for exact domain alignment

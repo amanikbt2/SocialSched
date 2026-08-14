@@ -206,12 +206,22 @@ export function generateLoopPosts(params: LoopGenerationParams): LoopGenerationR
       });
     }
 
+    // Assemble final image list: prepend startMediaUri, append endMediaUri if set
+    const finalImages: string[] = [];
+    if (container.startMediaUri) {
+      finalImages.push(container.startMediaUri);
+    }
+    finalImages.push(...selectedMediaForPost);
+    if (container.endMediaUri) {
+      finalImages.push(container.endMediaUri);
+    }
+
     const newPost: Post = {
       id: `post_loop_${container.id}_${Date.now()}_${postIndex}`,
       campaignId: container.id,
       caption,
       firstComment,
-      images: selectedMediaForPost,
+      images: finalImages,
       videos: [],
       platforms: platforms && platforms.length > 0 ? platforms : ['facebook', 'instagram'],
       scheduledAt: currentCursor.toISOString(),

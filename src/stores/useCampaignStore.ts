@@ -82,6 +82,10 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
         skipTimeRanges: c.skipTimeRanges ? (typeof c.skipTimeRanges === 'string' ? JSON.parse(c.skipTimeRanges) : c.skipTimeRanges) : [],
         enableFirstComment: Boolean(c.enableFirstComment),
         firstComment: c.firstComment || '',
+        startMediaUri: c.startMediaUri || null,
+        startMediaOriginalUri: c.startMediaOriginalUri || null,
+        endMediaUri: c.endMediaUri || null,
+        endMediaOriginalUri: c.endMediaOriginalUri || null,
       }));
 
       const posts: Post[] = rawPosts.map((p) => ({
@@ -150,8 +154,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `INSERT INTO campaigns (id, title, description, category, color, icon, thumbnailUri, platforms, smartSchedulingEnabled, intervalMinutes, startDate, startTime, hasEndDateLimit, endDate, endTime, isPaused, createdAt, isLoopContainer, mediaPerPost, loopDescriptions, loopMediaPool, usedMediaUris, currentLoopRound, isLoopCompleted, enableFirstComment, firstComment)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO campaigns (id, title, description, category, color, icon, thumbnailUri, platforms, smartSchedulingEnabled, intervalMinutes, startDate, startTime, hasEndDateLimit, endDate, endTime, isPaused, createdAt, isLoopContainer, mediaPerPost, loopDescriptions, loopMediaPool, usedMediaUris, currentLoopRound, isLoopCompleted, enableFirstComment, firstComment, startMediaUri, startMediaOriginalUri, endMediaUri, endMediaOriginalUri)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           newCampaign.id,
           newCampaign.title,
@@ -179,6 +183,10 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           newCampaign.isLoopCompleted ? 1 : 0,
           newCampaign.enableFirstComment ? 1 : 0,
           newCampaign.firstComment || null,
+          newCampaign.startMediaUri || null,
+          newCampaign.startMediaOriginalUri || null,
+          newCampaign.endMediaUri || null,
+          newCampaign.endMediaOriginalUri || null,
         ]
       );
     } catch (e) {
@@ -208,7 +216,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     try {
       const db = await getDatabase();
       await db.runAsync(
-        `UPDATE campaigns SET title = ?, description = ?, category = ?, color = ?, icon = ?, thumbnailUri = ?, platforms = ?, smartSchedulingEnabled = ?, intervalMinutes = ?, startDate = ?, startTime = ?, hasEndDateLimit = ?, endDate = ?, endTime = ?, isPaused = ?, isLoopContainer = ?, mediaPerPost = ?, loopDescriptions = ?, loopMediaPool = ?, usedMediaUris = ?, currentLoopRound = ?, isLoopCompleted = ?, enableFirstComment = ?, firstComment = ? WHERE id = ?;`,
+        `UPDATE campaigns SET title = ?, description = ?, category = ?, color = ?, icon = ?, thumbnailUri = ?, platforms = ?, smartSchedulingEnabled = ?, intervalMinutes = ?, startDate = ?, startTime = ?, hasEndDateLimit = ?, endDate = ?, endTime = ?, isPaused = ?, isLoopContainer = ?, mediaPerPost = ?, loopDescriptions = ?, loopMediaPool = ?, usedMediaUris = ?, currentLoopRound = ?, isLoopCompleted = ?, enableFirstComment = ?, firstComment = ?, startMediaUri = ?, startMediaOriginalUri = ?, endMediaUri = ?, endMediaOriginalUri = ? WHERE id = ?;`,
         [
           updated.title,
           updated.description,
@@ -234,6 +242,10 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
           updated.isLoopCompleted ? 1 : 0,
           updated.enableFirstComment ? 1 : 0,
           updated.firstComment || null,
+          updated.startMediaUri || null,
+          updated.startMediaOriginalUri || null,
+          updated.endMediaUri || null,
+          updated.endMediaOriginalUri || null,
           targetId,
         ]
       );
@@ -251,6 +263,51 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     if (!target) return;
     const isPaused = !target.isPaused;
     await get().updateCampaign(id, { isPaused });
+
+    const currentPosts = get().posts;
+    const nowISO = new Date().toISOString();
+
+    if (isPaused) {
+      // Smart Force Pause: Update any scheduled, waiting, or uploading posts for this container to 'paused'
+      const updatedPosts = currentPosts.map((p) => {
+        if (p.campaignId === id && (p.status === 'scheduled' || p.status === 'waiting' || p.status === 'uploading')) {
+          return { ...p, status: 'paused' as PostStatus, uploadProgress: 0, updatedAt: nowISO };
+        }
+        return p;
+      });
+
+      set({ posts: updatedPosts });
+
+      try {
+        const db = await getDatabase();
+        await db.runAsync(
+          `UPDATE posts SET status = 'paused', uploadProgress = 0, updatedAt = ? WHERE campaignId = ? AND status IN ('scheduled', 'waiting', 'uploading');`,
+          [nowISO, id]
+        );
+      } catch (e) {
+        console.warn('DB pause posts fallback:', e);
+      }
+    } else {
+      // Smart Resume: Restore any 'paused' posts for this container back to 'scheduled'
+      const updatedPosts = currentPosts.map((p) => {
+        if (p.campaignId === id && p.status === 'paused') {
+          return { ...p, status: 'scheduled' as PostStatus, updatedAt: nowISO };
+        }
+        return p;
+      });
+
+      set({ posts: updatedPosts });
+
+      try {
+        const db = await getDatabase();
+        await db.runAsync(
+          `UPDATE posts SET status = 'scheduled', updatedAt = ? WHERE campaignId = ? AND status = 'paused';`,
+          [nowISO, id]
+        );
+      } catch (e) {
+        console.warn('DB resume posts fallback:', e);
+      }
+    }
   },
 
   deleteCampaign: async (id) => {
@@ -515,9 +572,15 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   checkMissedPosts: async () => {
     const now = new Date();
     const currentPosts = get().posts;
+    const campaigns = get().campaigns;
+    const pausedCampaignIds = new Set(campaigns.filter((c) => c.isPaused).map((c) => c.id));
     let hasChanges = false;
 
     const updated = currentPosts.map((post) => {
+      // Skip posts belonging to paused containers!
+      if (post.campaignId && pausedCampaignIds.has(post.campaignId)) {
+        return post;
+      }
       if (post.status === 'scheduled' || post.status === 'waiting') {
         const schedDate = new Date(post.scheduledAt);
         if (schedDate < now) {

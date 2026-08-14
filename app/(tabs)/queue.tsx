@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { QueueProgressCard } from '../../src/components/queue/QueueProgressCard';
 import { FAB } from '../../src/components/common/FAB';
@@ -13,7 +13,7 @@ import { Play, Pause, RefreshCw, Layers, CheckCircle2 } from 'lucide-react-nativ
 export default function QueueScreen() {
   const colors = useThemeStore((state) => state.colors);
   const { posts, updatePost, loadData } = useCampaignStore();
-  const { engineState, setEngineState, activePostId } = useQueueStore();
+  const { engineState, setEngineState, activePostId, networkStatus, pausedReason } = useQueueStore();
 
   const [activeTab, setActiveTab] = useState<PostStatus | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -33,9 +33,25 @@ export default function QueueScreen() {
 
   const handleToggleEngine = () => {
     if (engineState === 'paused') {
-      setEngineState('processing');
+      if (networkStatus === 'offline') {
+        Alert.alert(
+          'Device is Offline',
+          'Queue cannot upload posts while offline. Resume anyway? Uploading will wait for internet connection.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Resume', 
+              onPress: () => {
+                setEngineState('idle', null);
+              } 
+            }
+          ]
+        );
+      } else {
+        setEngineState('idle', null);
+      }
     } else {
-      setEngineState('paused');
+      setEngineState('paused', 'user');
     }
   };
 
@@ -57,10 +73,14 @@ export default function QueueScreen() {
           <Layers size={20} color={colors.primary} />
           <View>
             <Text style={[styles.controlTitle, { color: colors.textPrimary }]}>
-              Queue Engine: <Text style={{ color: colors.primary }}>{engineState.toUpperCase()}</Text>
+              Queue Engine: <Text style={{ color: engineState === 'paused' ? (pausedReason === 'network' ? colors.warning : colors.error) : colors.primary }}>
+                {engineState === 'paused' ? (pausedReason === 'network' ? 'WAITING FOR NETWORK' : 'PAUSED') : engineState.toUpperCase()}
+              </Text>
             </Text>
             <Text style={[styles.controlSub, { color: colors.textSecondary }]}>
-              {queuePosts.length} items waiting in queue
+              {pausedReason === 'network' 
+                ? 'Uploads will resume automatically when online'
+                : `${queuePosts.length} items waiting in queue`}
             </Text>
           </View>
         </View>

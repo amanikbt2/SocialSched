@@ -167,6 +167,10 @@ async function initNativeTables(database: any) {
       skipTimeRanges TEXT,
       enableFirstComment INTEGER DEFAULT 0,
       firstComment TEXT,
+      startMediaUri TEXT,
+      startMediaOriginalUri TEXT,
+      endMediaUri TEXT,
+      endMediaOriginalUri TEXT,
       createdAt TEXT NOT NULL
     );
 
@@ -225,6 +229,10 @@ async function initNativeTables(database: any) {
     `ALTER TABLE campaigns ADD COLUMN skipTimeRanges TEXT`,
     `ALTER TABLE campaigns ADD COLUMN enableFirstComment INTEGER DEFAULT 0`,
     `ALTER TABLE campaigns ADD COLUMN firstComment TEXT`,
+    `ALTER TABLE campaigns ADD COLUMN startMediaUri TEXT`,
+    `ALTER TABLE campaigns ADD COLUMN startMediaOriginalUri TEXT`,
+    `ALTER TABLE campaigns ADD COLUMN endMediaUri TEXT`,
+    `ALTER TABLE campaigns ADD COLUMN endMediaOriginalUri TEXT`,
     `ALTER TABLE posts ADD COLUMN firstComment TEXT`,
     `ALTER TABLE posts ADD COLUMN facebookPostId TEXT`,
   ];

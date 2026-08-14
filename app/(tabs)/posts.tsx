@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+declare const window: any;
 import {
   View,
   Text,

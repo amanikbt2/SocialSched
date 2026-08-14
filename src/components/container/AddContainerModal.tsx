@@ -20,7 +20,7 @@ import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
 import { Container, Post, SkipTimeRange, SocialPlatform } from '../../db/types';
 import { FacebookMediaGrid } from '../common/FacebookMediaGrid';
 import { pickLocalMedia } from '../../utils/mediaPicker';
-import { saveMultipleMediaToHiddenFolder } from '../../utils/localMediaStorage';
+import { saveMultipleMediaToHiddenFolder, assignNamedMediaFile, restoreOriginalMediaFile } from '../../utils/localMediaStorage';
 import { generateLoopPosts } from '../../services/loopContainerEngine';
 import { processSmartFirstComment } from '../../utils/tagProcessor';
 import {
@@ -244,6 +244,12 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
 
+  // Start & End media state
+  const [startMediaUri, setStartMediaUri] = useState<string | null>(existingContainer?.startMediaUri || null);
+  const [startMediaOriginalUri, setStartMediaOriginalUri] = useState<string | null>(existingContainer?.startMediaOriginalUri || null);
+  const [endMediaUri, setEndMediaUri] = useState<string | null>(existingContainer?.endMediaUri || null);
+  const [endMediaOriginalUri, setEndMediaOriginalUri] = useState<string | null>(existingContainer?.endMediaOriginalUri || null);
+
   const handleAddDescription = () => {
     if (!newDescInput.trim()) return;
     const lines = newDescInput
@@ -273,6 +279,49 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 
   const handleRemoveMediaFromPool = (index: number) => {
     setLoopMediaPool(loopMediaPool.filter((_, idx) => idx !== index));
+  };
+
+  // Start / End Media handlers
+  const handlePickStartMedia = async () => {
+    const picked = await pickLocalMedia();
+    if (!picked || picked.length === 0) return;
+    const source = picked[0];
+    const containerId = existingContainer?.id || 'container_' + Date.now();
+    const { namedUri, originalUri } = await assignNamedMediaFile(
+      source, 'start', containerId,
+      startMediaUri, startMediaOriginalUri
+    );
+    setStartMediaUri(namedUri);
+    setStartMediaOriginalUri(originalUri);
+  };
+
+  const handlePickEndMedia = async () => {
+    const picked = await pickLocalMedia();
+    if (!picked || picked.length === 0) return;
+    const source = picked[0];
+    const containerId = existingContainer?.id || 'container_' + Date.now();
+    const { namedUri, originalUri } = await assignNamedMediaFile(
+      source, 'end', containerId,
+      endMediaUri, endMediaOriginalUri
+    );
+    setEndMediaUri(namedUri);
+    setEndMediaOriginalUri(originalUri);
+  };
+
+  const handleClearStartMedia = async () => {
+    if (startMediaUri && startMediaOriginalUri) {
+      await restoreOriginalMediaFile(startMediaUri, startMediaOriginalUri);
+    }
+    setStartMediaUri(null);
+    setStartMediaOriginalUri(null);
+  };
+
+  const handleClearEndMedia = async () => {
+    if (endMediaUri && endMediaOriginalUri) {
+      await restoreOriginalMediaFile(endMediaUri, endMediaOriginalUri);
+    }
+    setEndMediaUri(null);
+    setEndMediaOriginalUri(null);
   };
 
   // Pull Down Refresh / Clean Form handler
@@ -320,6 +369,10 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         setIsLoopContainer(existingContainer.isLoopContainer || false);
         setLoopDescriptions(existingContainer.loopDescriptions || []);
         setLoopMediaPool(existingContainer.loopMediaPool || []);
+        setStartMediaUri(existingContainer.startMediaUri || null);
+        setStartMediaOriginalUri(existingContainer.startMediaOriginalUri || null);
+        setEndMediaUri(existingContainer.endMediaUri || null);
+        setEndMediaOriginalUri(existingContainer.endMediaOriginalUri || null);
         setMediaPerPost(existingContainer.mediaPerPost || 1);
         setStartDate(existingContainer.startDate || getTodayISO());
         setStartTime(existingContainer.startTime || getFutureTimeString(30));
@@ -340,6 +393,10 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           '🚀 Check out this awesome post! Tag a friend who needs to see this. @creator',
         ]);
         setLoopMediaPool([]);
+        setStartMediaUri(null);
+        setStartMediaOriginalUri(null);
+        setEndMediaUri(null);
+        setEndMediaOriginalUri(null);
         setMediaPerPost(1);
         setStartDate(getTodayISO());
         setStartTime(getFutureTimeString(30));
@@ -501,6 +558,10 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           skipTimeRanges: skipTimeRanges,
           enableFirstComment: enableFirstComment,
           firstComment: firstComment,
+          startMediaUri: startMediaUri || null,
+          startMediaOriginalUri: startMediaOriginalUri || null,
+          endMediaUri: endMediaUri || null,
+          endMediaOriginalUri: endMediaOriginalUri || null,
         };
 
         if (existingContainer) {
@@ -741,7 +802,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
       >
         {/* Pull-down Refresh / Clear Form Banner */}
         <View style={[styles.pullRefreshBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
             <RotateCcw size={13} color={colors.primary} />
             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>
               Pull down to refresh & clean form
@@ -819,7 +880,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
               Container Name {!title.trim() ? '— Required!' : ''}
             </Text>
             {!title.trim() && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 4 }}>
                 <AlertCircle size={12} color="#EF4444" />
                 <Text style={{ fontSize: 10, fontWeight: '800', color: '#EF4444' }}>REQUIRED</Text>
               </View>
@@ -883,7 +944,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             />
 
             {/* Quick Smart Tags insertion chips */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 6, rowGap: 6, marginTop: 8 }}>
               <Text style={{ fontSize: 11, color: colors.textSecondary, alignSelf: 'center', marginRight: 4 }}>Insert Tag:</Text>
               {[
                 { tag: '{hashtags}', label: '+ {hashtags}' },
@@ -1397,6 +1458,85 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {/* Tab 2: MEDIA POOL */}
             {loopTab === 'media' && (
               <View style={styles.tabBodyBox}>
+                {/* Start & End Media Section */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 10 }]}>
+                    START & END MEDIA (Fixed Bookend Slides)
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 12, lineHeight: 16 }}>
+                    Optional: First and last image for every generated post (e.g. cover photo + follow CTA). Files are renamed locally so no duplicates are created.
+                  </Text>
+
+                  {/* Start Media */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handlePickStartMedia}
+                      style={[
+                        styles.urlAddBtn,
+                        { backgroundColor: colors.primaryContainer, paddingHorizontal: 14, paddingVertical: 10, flex: 1 },
+                      ]}
+                    >
+                      <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
+                        {startMediaUri ? '\uD83D\uDD04 Change Start Media' : '\uD83D\uDCCC Pick Start Media (Intro/Cover)'}
+                      </Text>
+                    </TouchableOpacity>
+                    {!!startMediaUri && (
+                      <TouchableOpacity onPress={handleClearStartMedia} style={{ padding: 6, marginLeft: 8 }}>
+                        <X size={16} color={colors.danger} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {startMediaUri ? (
+                    <View style={{ position: 'relative', width: 80, height: 80, marginBottom: 12 }}>
+                      <Image source={{ uri: startMediaUri }} style={{ width: 80, height: 80, borderRadius: 8 }} resizeMode="cover" />
+                      <View style={[
+                        styles.indexBadge,
+                        { backgroundColor: colors.primary, position: 'absolute', bottom: 4, left: 4, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+                      ]}>
+                        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>START</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 12 }}>{'No start media set - first pool image will be slide #1'}</Text>
+                  )}
+
+                  {/* End Media */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handlePickEndMedia}
+                      style={[
+                        styles.urlAddBtn,
+                        { backgroundColor: colors.primaryContainer, paddingHorizontal: 14, paddingVertical: 10, flex: 1 },
+                      ]}
+                    >
+                      <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
+                        {endMediaUri ? '\uD83D\uDD04 Change End Media' : '\uD83C\uDFC1 Pick End Media (Outro/CTA)'}
+                      </Text>
+                    </TouchableOpacity>
+                    {!!endMediaUri && (
+                      <TouchableOpacity onPress={handleClearEndMedia} style={{ padding: 6, marginLeft: 8 }}>
+                        <X size={16} color={colors.danger} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {endMediaUri ? (
+                    <View style={{ position: 'relative', width: 80, height: 80, marginBottom: 4 }}>
+                      <Image source={{ uri: endMediaUri }} style={{ width: 80, height: 80, borderRadius: 8 }} resizeMode="cover" />
+                      <View style={[
+                        styles.indexBadge,
+                        { backgroundColor: '#EF4444', position: 'absolute', bottom: 4, left: 4, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+                      ]}>
+                        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>END</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>{'No end media set - last pool image will be the final slide'}</Text>
+                  )}
+                </View>
+
+                {/* Bulk Pick Button */}
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={handleBulkPickMedia}
@@ -1985,7 +2125,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                     <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 6 }}>
                       Daily Recurring Window (Every Day)
                     </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
                       <TouchableOpacity
                         activeOpacity={0.9}
                         style={[styles.timeBox, { backgroundColor: colors.surface, borderColor: colors.border, flex: 1, height: 40, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, borderRadius: 10 }]}

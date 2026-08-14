@@ -30,11 +30,16 @@ export async function triggerInstantPublish(postId: string): Promise<{ success: 
   processingPostIds.add(postId);
 
   try {
-    const { posts, updatePost } = useCampaignStore.getState();
+    const { posts, campaigns, updatePost } = useCampaignStore.getState();
     const targetPost = posts.find((p) => p.id === postId);
 
     if (!targetPost) {
       return { success: false, error: 'Post not found.' };
+    }
+
+    const targetCampaign = campaigns.find((c) => c.id === targetPost.campaignId);
+    if (targetCampaign && targetCampaign.isPaused) {
+      return { success: false, error: 'Container is PAUSED. Resume container to publish/upload.' };
     }
 
     await updatePost(postId, { status: 'uploading', uploadProgress: 50, failureReason: null });
@@ -72,7 +77,8 @@ async function processQueueTick() {
 
   try {
     const { networkStatus, engineState, setEngineState, setActiveUpload } = useQueueStore.getState();
-    const { posts, updatePost, checkMissedPosts } = useCampaignStore.getState();
+    const { posts, campaigns, updatePost, checkMissedPosts } = useCampaignStore.getState();
+    const pausedCampaignIds = new Set(campaigns.filter((c) => c.isPaused).map((c) => c.id));
 
     if (engineState === 'paused') {
       isProcessing = false;
@@ -84,7 +90,7 @@ async function processQueueTick() {
 
     // 2. Check if offline
     if (networkStatus === 'offline') {
-      setEngineState('paused');
+      setEngineState('paused', 'network');
       const activeUploading = posts.find((p) => p.status === 'uploading');
       if (activeUploading) {
         await updatePost(activeUploading.id, {
@@ -114,6 +120,7 @@ async function processQueueTick() {
       const newCandidates = posts
         .filter((p) => {
           if (processingPostIds.has(p.id)) return false;
+          if (p.campaignId && pausedCampaignIds.has(p.campaignId)) return false; // Smart Pause: exclude posts from paused containers
           if (p.status !== 'scheduled' && p.status !== 'waiting' && p.status !== 'paused') return false;
           const schedTime = Date.parse(p.scheduledAt);
           const diffMins = (schedTime - nowTime) / (1000 * 60);
@@ -127,10 +134,24 @@ async function processQueueTick() {
       }
     }
 
-    // Get all currently uploading posts (including freshly added ones)
-    const uploadingPosts = get().posts.filter(
+    // Get all currently uploading posts and filter out any whose container was paused
+    const rawUploadingPosts = get().posts.filter(
       (p) => p.status === 'uploading' && processingPostIds.has(p.id)
     );
+
+    const uploadingPosts: Post[] = [];
+    for (const post of rawUploadingPosts) {
+      if (post.campaignId && pausedCampaignIds.has(post.campaignId)) {
+        processingPostIds.delete(post.id);
+        await updatePost(post.id, {
+          status: 'paused',
+          uploadProgress: 0,
+          failureReason: 'Container paused by user.',
+        });
+      } else {
+        uploadingPosts.push(post);
+      }
+    }
 
     if (uploadingPosts.length > 0) {
       setEngineState('processing');

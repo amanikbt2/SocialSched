@@ -66,3 +66,91 @@ export async function saveMultipleMediaToHiddenFolder(uris: string[]): Promise<s
   }
   return saved;
 }
+
+/**
+ * Assigns a specific file as Start or End media in local storage.
+ * Renames local file to start_<containerId>.<ext> or end_<containerId>.<ext>.
+ * Restores previous file to its original filename if replaced.
+ */
+export async function assignNamedMediaFile(
+  sourceUri: string,
+  targetType: 'start' | 'end',
+  containerId: string,
+  previousNamedUri?: string | null,
+  previousOriginalUri?: string | null
+): Promise<{ namedUri: string; originalUri: string }> {
+  if (Platform.OS === 'web' || !sourceUri || sourceUri.startsWith('http')) {
+    return { namedUri: sourceUri, originalUri: sourceUri };
+  }
+
+  try {
+    const dir = await ensureHiddenDirExists();
+    if (!dir) return { namedUri: sourceUri, originalUri: sourceUri };
+
+    // 1. Restore previous file if it existed
+    if (previousNamedUri && previousOriginalUri && previousNamedUri !== previousOriginalUri) {
+      await restoreOriginalMediaFile(previousNamedUri, previousOriginalUri);
+    }
+
+    // 2. Ensure sourceUri is saved in local hidden folder first
+    let localSourceUri = sourceUri;
+    if (!sourceUri.includes('.socialsched_media')) {
+      localSourceUri = await saveMediaToHiddenFolder(sourceUri);
+    }
+
+    // 3. Create the named destination URI e.g. start_c123.jpg or end_c123.jpg
+    const ext = localSourceUri.split('.').pop()?.split('?')[0] || 'jpg';
+    const namedFilename = `${targetType}_${containerId || 'default'}.${ext}`;
+    const destinationNamedUri = dir + namedFilename;
+
+    if (localSourceUri !== destinationNamedUri) {
+      const targetExists = await FileSystem.getInfoAsync(destinationNamedUri);
+      if (targetExists.exists) {
+        await FileSystem.deleteAsync(destinationNamedUri, { idempotent: true });
+      }
+      await FileSystem.copyAsync({
+        from: localSourceUri,
+        to: destinationNamedUri,
+      });
+    }
+
+    console.log(`🏷️ Assigned ${targetType.toUpperCase()} media to: ${destinationNamedUri} (Original: ${localSourceUri})`);
+    return { namedUri: destinationNamedUri, originalUri: localSourceUri };
+  } catch (err) {
+    console.warn(`Failed to assign ${targetType} media:`, err);
+    return { namedUri: sourceUri, originalUri: sourceUri };
+  }
+}
+
+/**
+ * Restores a named media file (e.g. start_c123.jpg) back to its original filename.
+ */
+export async function restoreOriginalMediaFile(
+  namedUri: string,
+  originalUri: string
+): Promise<string> {
+  if (Platform.OS === 'web' || !namedUri || !originalUri || namedUri === originalUri || namedUri.startsWith('http')) {
+    return originalUri;
+  }
+
+  try {
+    const namedInfo = await FileSystem.getInfoAsync(namedUri);
+    if (namedInfo.exists) {
+      const origInfo = await FileSystem.getInfoAsync(originalUri);
+      if (!origInfo.exists) {
+        await FileSystem.moveAsync({
+          from: namedUri,
+          to: originalUri,
+        });
+        console.log(`🔄 Restored ${namedUri} back to original filename: ${originalUri}`);
+      } else {
+        await FileSystem.deleteAsync(namedUri, { idempotent: true });
+      }
+    }
+    return originalUri;
+  } catch (err) {
+    console.warn('Failed to restore original media filename:', err);
+    return originalUri;
+  }
+}
+
