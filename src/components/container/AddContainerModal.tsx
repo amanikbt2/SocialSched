@@ -11,6 +11,7 @@ import {
   Alert,
   Modal,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { AnimatedSheet } from '../common/AnimatedSheet';
 import { useThemeStore } from '../../stores/useThemeStore';
@@ -671,6 +672,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 
   const formValidation = getFormValidation();
   const isFormReady = formValidation.valid;
+  const isFormClickable = isFormReady || formValidation.errorType === 'time';
 
   const getFirst5Words = (text: string) => {
     if (!text || text.trim() === '') return 'Empty caption post...';
@@ -1601,6 +1603,14 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                             </Text>
                           </TouchableOpacity>
                         </ScrollView>
+
+                        {/* Real Multi-Gallery Grid Preview */}
+                        <View style={{ marginTop: 10 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSecondary, marginBottom: 4, letterSpacing: 0.5 }}>
+                            POST MULTI-GALLERY PREVIEW:
+                          </Text>
+                          <FacebookMediaGrid images={item.images} />
+                        </View>
                       </View>
                     ) : (
                       <TouchableOpacity
@@ -1731,9 +1741,25 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         {/* Save Container Button */}
         <TouchableOpacity
           activeOpacity={0.8}
-          disabled={isSubmitting || !isFormReady}
+          disabled={isSubmitting || !isFormClickable}
           onPress={() => {
             if (isSubmitting) return;
+            if (formValidation.errorType === 'time') {
+              Alert.alert(
+                '⏰ Scheduled Time Warning',
+                'The scheduled start time is in the past or under 10 minutes in the future. Ready posts will be published LIVE immediately. Proceed anyway?',
+                [
+                  { text: 'Cancel / Change Time', style: 'cancel' },
+                  {
+                    text: 'Create Anyway',
+                    onPress: () => {
+                      handleSaveContainer();
+                    },
+                  },
+                ]
+              );
+              return;
+            }
             if (!isFormReady) {
               Alert.alert('Cannot Save Container', formValidation.error);
               return;
@@ -1757,7 +1783,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                 ? '#0284C7'
                 : '#EF4444',
               opacity: isSubmitting ? 0.65 : 1,
-              borderWidth: isFormReady ? 0 : 2,
+              borderWidth: isFormClickable ? 0 : 2,
               borderColor: 'rgba(255,255,255,0.35)',
             },
           ]}
