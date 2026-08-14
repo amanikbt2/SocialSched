@@ -18,7 +18,7 @@ import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore'
 import { fetchMetaScheduledPostsCount, fetchMetaScheduledPosts, deleteMetaScheduledPost, MetaScheduledPost } from '../../src/services/facebookPublisher';
 import { TopReloadProgressBar } from '../../src/components/common/TopReloadProgressBar';
 import { Container, Post } from '../../src/db/types';
-import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react-native';
+import { Plus, Layers, Globe, FolderPlus, Clock, ChevronRight, CheckCircle2, Trash2, Repeat } from 'lucide-react-native';
 
 export default function HomeScreen() {
   const colors = useThemeStore((state) => state.colors);
@@ -26,6 +26,8 @@ export default function HomeScreen() {
   const { accounts, loadSavedAccounts } = useSocialAccountsStore();
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [initialIsLoop, setInitialIsLoop] = useState(false);
   const [editingContainer, setEditingContainer] = useState<Container | null>(null);
   const [metaServerScheduledCount, setMetaServerScheduledCount] = useState<number | null>(null);
   const [remoteScheduledPosts, setRemoteScheduledPosts] = useState<MetaScheduledPost[]>([]);
@@ -120,11 +122,18 @@ export default function HomeScreen() {
 
   const handleOpenAdd = () => {
     setEditingContainer(null);
+    setTypeModalVisible(true);
+  };
+
+  const handleChooseType = (isLoop: boolean) => {
+    setInitialIsLoop(isLoop);
+    setTypeModalVisible(false);
     setModalVisible(true);
   };
 
   const handleEditContainer = (container: Container) => {
     setEditingContainer(container);
+    setInitialIsLoop(container.isLoopContainer || false);
     setModalVisible(true);
   };
 
@@ -239,7 +248,74 @@ export default function HomeScreen() {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         existingContainer={editingContainer}
+        initialIsLoop={initialIsLoop}
       />
+
+      {/* Container Type Selection Modal Sheet */}
+      <AnimatedSheet
+        visible={typeModalVisible}
+        onClose={() => setTypeModalVisible(false)}
+        title="Select Container Type"
+        subtitle="Choose scheduling mechanics for your campaign"
+      >
+        <View style={{ gap: 14, padding: 4, marginBottom: 20 }}>
+          {/* Option A: Standard Container */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => handleChooseType(false)}
+            style={{
+              backgroundColor: colors.surfaceVariant,
+              borderColor: colors.border,
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: colors.primaryContainer, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>
+              <Layers size={22} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                Standard Container
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 16 }}>
+                Add individual posts with fixed descriptions, custom times, and specific attached image galleries.
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Option B: Loop Container */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => handleChooseType(true)}
+            style={{
+              backgroundColor: colors.surfaceVariant,
+              borderColor: colors.border,
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#8B5CF618', alignItems: 'center', justifyContent: 'center', display: 'flex' }}>
+              <Repeat size={22} color="#8B5CF6" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                Loop Container
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 16 }}>
+                Upload a general pool of media and descriptions. SocialSched shuffles and schedules them automatically.
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </AnimatedSheet>
 
       {/* POPUP LIST MODAL FOR SCHEDULED POSTS */}
       {(() => {

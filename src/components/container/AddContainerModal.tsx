@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,11 @@ import { pickLocalMedia } from '../../utils/mediaPicker';
 import { saveMultipleMediaToHiddenFolder } from '../../utils/localMediaStorage';
 import { generateLoopPosts } from '../../services/loopContainerEngine';
 import { processSmartFirstComment } from '../../utils/tagProcessor';
+import {
+  smartNormalizeDate,
+  smartNormalizeTime,
+  validateScheduledDateTime,
+} from '../../utils/dateTimeHelper';
 import {
   getSmartSuggestions,
   appendTagToText,
@@ -58,11 +63,13 @@ import {
   RotateCcw,
 } from 'lucide-react-native';
 import { platformColors } from '../../theme/colors';
+import { TopReloadProgressBar } from '../common/TopReloadProgressBar';
 
 interface AddContainerModalProps {
   visible: boolean;
   onClose: () => void;
   existingContainer?: Container | null;
+  initialIsLoop?: boolean;
 }
 
 const SAMPLE_HASHTAGS = ['#viral', '#trending', '#marketing', '#tech', '#growth', '#photooftheday', '#sale'];
@@ -86,6 +93,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   visible,
   onClose,
   existingContainer,
+  initialIsLoop,
 }) => {
   const colors = useThemeStore((state) => state.colors);
   const { addCampaign, updateCampaign, addPost, addPostsBatch, clearScheduledPostsForCampaign } = useCampaignStore();
@@ -132,6 +140,9 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
     existingContainer?.skipTimeRanges || []
   );
   const [skipModalVisible, setSkipModalVisible] = useState<boolean>(false);
+
+  // Form submission loading state to prevent double-click / multiple creations
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [newSkipLabel, setNewSkipLabel] = useState<string>('');
   const [newSkipStartDate, setNewSkipStartDate] = useState<string>(getTodayISO());
   const [newSkipStartTime, setNewSkipStartTime] = useState<string>('23:00');
@@ -245,7 +256,6 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
     setTitle('');
     setLoopDescriptions([]);
     setLoopMediaPool([]);
-    setPersistentMediaPool([]);
     setPosts([]);
     setMediaPerPost(1);
     setStartDate(getTodayISO());
@@ -273,6 +283,58 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
       expanded: true,
     },
   ]);
+
+  useEffect(() => {
+    if (visible) {
+      setIsSubmitting(false);
+      if (existingContainer) {
+        setTitle(existingContainer.title || '');
+        setSelectedPlatforms(existingContainer.platforms || []);
+        setIsLoopContainer(existingContainer.isLoopContainer || false);
+        setLoopDescriptions(existingContainer.loopDescriptions || []);
+        setLoopMediaPool(existingContainer.loopMediaPool || []);
+        setMediaPerPost(existingContainer.mediaPerPost || 1);
+        setStartDate(existingContainer.startDate || getTodayISO());
+        setStartTime(existingContainer.startTime || getFutureTimeString(30));
+        setHasEndDateLimit(existingContainer.hasEndDateLimit || false);
+        setEndDate(existingContainer.endDate || getTomorrowISO());
+        setEndTime(existingContainer.endTime || '23:59');
+        setSkipTimeRanges(existingContainer.skipTimeRanges || []);
+        setEnableFirstComment(existingContainer.enableFirstComment || false);
+        setFirstComment(existingContainer.firstComment || '');
+      } else {
+        // Reset to default new container
+        setTitle('');
+        setSelectedPlatforms(['facebook']);
+        setIsLoopContainer(initialIsLoop ?? false);
+        setLoopDescriptions([
+          '🔥 Fresh daily content for our amazing community! #viral #trending',
+          '✨ Level up your social media presence with consistent value. #growth #marketing',
+          '🚀 Check out this awesome post! Tag a friend who needs to see this. @creator',
+        ]);
+        setLoopMediaPool([]);
+        setMediaPerPost(1);
+        setStartDate(getTodayISO());
+        setStartTime(getFutureTimeString(30));
+        setHasEndDateLimit(false);
+        setEndDate(getTomorrowISO());
+        setEndTime('23:59');
+        setSkipTimeRanges([]);
+        setEnableFirstComment(false);
+        setFirstComment('');
+        setPosts([
+          {
+            id: '1',
+            caption: '',
+            images: [],
+            scheduledDate: getTodayISO(),
+            scheduledTime: getFutureTimeString(30),
+            expanded: true,
+          },
+        ]);
+      }
+    }
+  }, [visible, existingContainer, initialIsLoop]);
 
   const togglePlatform = (p: SocialPlatform) => {
     if (selectedPlatforms.includes(p)) {
@@ -358,11 +420,13 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   };
 
   const handleSaveContainer = async () => {
+    if (isSubmitting) return;
     if (!title.trim()) {
       Alert.alert('Error', 'Please enter a Container Title');
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const containerId = existingContainer?.id || 'container_' + Date.now();
       const normStartD = smartNormalizeDate(startDate) || getTodayISO();
@@ -371,10 +435,12 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
       if (isLoopContainer) {
         if (loopDescriptions.length === 0) {
           Alert.alert('Error', 'Please add at least 1 description for your Loop Container!');
+          setIsSubmitting(false);
           return;
         }
         if (loopMediaPool.length === 0) {
           Alert.alert('Error', 'Please add photos or videos to your Media Pool!');
+          setIsSubmitting(false);
           return;
         }
 
@@ -549,66 +615,13 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
     } catch (err: any) {
       console.error('Error saving container:', err);
       Alert.alert('Error', `Error saving container: ${err.message || err}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
-  const smartNormalizeDate = (val: string): string => {
-    if (!val) return val;
-    const trimmed = val.trim();
-    const parts = trimmed.split(/[\/\-\.]/);
-    if (parts.length === 3) {
-      let [p1, p2, p3] = parts;
-      if (p3.length === 4) {
-        const d = p1.padStart(2, '0');
-        const m = p2.padStart(2, '0');
-        return `${p3}-${m}-${d}`;
-      } else if (p1.length === 4) {
-        const m = p2.padStart(2, '0');
-        const d = p3.padStart(2, '0');
-        return `${p1}-${m}-${d}`;
-      }
-    }
-    return trimmed;
   };
 
-  const smartNormalizeTime = (val: string): string => {
-    if (!val) return val;
-    const trimmed = val.trim();
-    if (/^\d{1,2}$/.test(trimmed)) {
-      return `${trimmed.padStart(2, '0')}:00`;
-    }
-    const parts = trimmed.split(':');
-    if (parts.length === 2) {
-      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
-    }
-    return trimmed;
-  };
 
-  const validateScheduledDateTime = (
-    dStr: string,
-    tStr: string
-  ): { valid: boolean; error?: string } => {
-    const normD = smartNormalizeDate(dStr);
-    const normT = smartNormalizeTime(tStr);
-    const parsed = Date.parse(`${normD}T${normT}:00`);
-
-    if (isNaN(parsed)) {
-      return { valid: false, error: 'Invalid Date/Time format. Use YYYY-MM-DD and HH:MM' };
-    }
-
-    const diffMinutes = (parsed - Date.now()) / (1000 * 60);
-    if (diffMinutes < 10) {
-      return {
-        valid: false,
-        error:
-          diffMinutes <= 0
-            ? '⏰ Scheduled time is in the past! Pick a time at least 10 minutes in future.'
-            : '⏰ Time must be at least 10 minutes in the future for Meta Server scheduling.',
-      };
-    }
-
-    return { valid: true };
-  };
 
   const startValidation = validateScheduledDateTime(startDate, startTime);
 
@@ -679,43 +692,54 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
       visible={visible}
       onClose={onClose}
       fullScreen={true}
-      title={existingContainer ? 'Edit Container' : 'Add Scheduler Container'}
-      subtitle="Tick platforms, custom time interval & local photos"
+      title={
+        existingContainer
+          ? existingContainer.isLoopContainer
+            ? 'Edit Loop Container'
+            : 'Edit Standard Container'
+          : initialIsLoop
+          ? 'Add Loop Container'
+          : 'Add Standard Container'
+      }
+      subtitle={initialIsLoop ? 'Smart scheduling with randomized media & descriptions' : 'Schedule explicit individual posts with fixed times'}
     >
+      <TopReloadProgressBar loading={refreshing} />
       <ScrollView
-        style={styles.containerScroll}
+        style={[styles.containerScroll, { opacity: refreshing ? 0.55 : 1 }]}
         contentContainerStyle={styles.scrollPaddingBottom}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleResetForm}
+            colors={['#1877F2']}
+            tintColor="#1877F2"
+            title="Pull down to clear form & start fresh..."
+            titleColor={colors.textSecondary}
+          />
+        }
       >
+        {/* Pull-down Refresh / Clear Form Banner */}
+        <View style={[styles.pullRefreshBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <RotateCcw size={13} color={colors.primary} />
+            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>
+              Pull down to refresh & clean form
+            </Text>
+          </View>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleResetForm}
+            style={[styles.clearBtnPill, { backgroundColor: colors.primaryContainer }]}
+          >
+            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.primary }}>CLEAR FORM</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Step 1: Container Title & Multi-Tick Target Platforms */}
         <Text style={[styles.sectionHeading, { color: colors.textSecondary }]}>
           CONTAINER DETAILS
         </Text>
-
-        {/* TOP TOGGLE: Loop Container */}
-        <View style={[styles.loopToggleCard, { backgroundColor: isLoopContainer ? colors.primaryContainer + '35' : colors.surfaceVariant, borderColor: isLoopContainer ? colors.primary : colors.border }]}>
-          <View style={styles.loopToggleLeft}>
-            <Repeat size={20} color={isLoopContainer ? colors.primary : colors.textSecondary} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.loopToggleTitle, { color: colors.textPrimary }]}>
-                Loop Container
-              </Text>
-              <Text style={[styles.loopToggleSubtitle, { color: isLoopContainer ? colors.primary : colors.textSecondary }]}>
-                {isLoopContainer
-                  ? `Media current round: ${existingContainer?.currentLoopRound || 1} • Auto-schedule until End Date`
-                  : 'Auto-schedule random media & descriptions until End Date'}
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={isLoopContainer}
-            onValueChange={(val) => {
-              setIsLoopContainer(val);
-              if (val) setSmartScheduling(true);
-            }}
-            trackColor={{ false: colors.border, true: colors.primary }}
-          />
-        </View>
 
         {isLoopContainer && (
           <View>
@@ -1708,7 +1732,9 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         {/* Save Container Button */}
         <TouchableOpacity
           activeOpacity={0.8}
+          disabled={isSubmitting || !isFormReady}
           onPress={() => {
+            if (isSubmitting) return;
             if (!isFormReady) {
               Alert.alert('Cannot Save Container', formValidation.error);
               return;
@@ -1718,7 +1744,9 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           style={[
             styles.saveBtn,
             {
-              backgroundColor: isFormReady
+              backgroundColor: isSubmitting
+                ? colors.primaryContainer
+                : isFormReady
                 ? colors.primary
                 : formValidation.errorType === 'title'
                 ? '#DC2626'
@@ -1729,18 +1757,25 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                 : formValidation.errorType === 'posts'
                 ? '#0284C7'
                 : '#EF4444',
+              opacity: isSubmitting ? 0.65 : 1,
               borderWidth: isFormReady ? 0 : 2,
               borderColor: 'rgba(255,255,255,0.35)',
             },
           ]}
         >
-          {isFormReady ? (
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+          ) : isFormReady ? (
             <Check size={18} color="#FFFFFF" />
           ) : (
             <AlertCircle size={18} color="#FFFFFF" />
           )}
           <Text style={styles.saveBtnText} numberOfLines={1}>
-            {isFormReady
+            {isSubmitting
+              ? existingContainer
+                ? 'Saving Container...'
+                : 'Creating Container...'
+              : isFormReady
               ? existingContainer
                 ? '✓  Save Container'
                 : '✓  Create & Save Container'
@@ -1757,7 +1792,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
         onRequestClose={() => setSkipModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.background, maxHeight: '85%', width: '92%', maxWidth: 440, padding: 18, borderRadius: 20, display: 'flex', flexDirection: 'column' }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.background, height: '78%', maxHeight: 600, minHeight: 440, width: '92%', maxWidth: 440, padding: 18, borderRadius: 20, display: 'flex', flexDirection: 'column' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Clock size={20} color="#8B5CF6" />
@@ -2648,5 +2683,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 10,
+  },
+  pullRefreshBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  clearBtnPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
 });
