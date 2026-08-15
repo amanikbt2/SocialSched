@@ -1,9 +1,9 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
 function createStaticPage(folderName, title, icon, bodyHtml) {
-  const targetDir = path.join(__dirname, '../dist', folderName);
-  const targetFile = path.join(targetDir, 'index.html');
+  const targetDir = path.join(__dirname, "../dist", folderName);
+  const targetFile = path.join(targetDir, "index.html");
 
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
@@ -102,12 +102,16 @@ function createStaticPage(folderName, title, icon, bodyHtml) {
 </body>
 </html>`;
 
-  fs.writeFileSync(targetFile, fullHtml, 'utf8');
+  fs.writeFileSync(targetFile, fullHtml, "utf8");
   console.log(`✅ Successfully wrote dist/${folderName}/index.html`);
 }
 
 // 1. Privacy Policy
-createStaticPage('privacy', 'Privacy Policy', '🛡️', `
+createStaticPage(
+  "privacy",
+  "Privacy Policy",
+  "🛡️",
+  `
   <div class="section">
     <h2 class="section-title">1. Introduction</h2>
     <p>Welcome to SocialSched ("we," "our," or "us"). We respect your privacy and are committed to protecting your personal data. This privacy policy explains how our application processes, stores, and handles your information when you connect your Facebook and Instagram accounts.</p>
@@ -124,10 +128,15 @@ createStaticPage('privacy', 'Privacy Policy', '🛡️', `
     <h2 class="section-title">3. Contact Us</h2>
     <p>Email: <span class="bold">amanikbt1@gmail.com</span></p>
   </div>
-`);
+`,
+);
 
 // 2. Terms of Service
-createStaticPage('terms', 'Terms of Service', '📄', `
+createStaticPage(
+  "terms",
+  "Terms of Service",
+  "📄",
+  `
   <div class="section">
     <h2 class="section-title">1. Agreement to Terms</h2>
     <p>By accessing or using SocialSched, you agree to be bound by these Terms of Service.</p>
@@ -140,7 +149,8 @@ createStaticPage('terms', 'Terms of Service', '📄', `
     <h2 class="section-title">3. Contact Us</h2>
     <p>Email: <span class="bold">amanikbt1@gmail.com</span></p>
   </div>
-`);
+`,
+);
 
 // 3. Data Deletion Instructions
 const dataDeletionBody = `
@@ -192,9 +202,16 @@ const dataDetectionBody = `
   </div>
 `;
 
-createStaticPage('data-detection', 'Data Detection Policy & Instructions', '🔍', dataDetectionBody);
+createStaticPage(
+  "data-deletion",
+  "User Data Deletion Instructions",
+  "🗑️",
+  dataDeletionBody,
+);
 
 // Create _redirects file for Render Static Sites
-const redirectsFile = path.join(__dirname, '../dist/_redirects');
-fs.writeFileSync(redirectsFile, '/* /index.html 200\n', 'utf8');
-console.log('✅ Successfully wrote dist/_redirects for Render fallback routing');
+const redirectsFile = path.join(__dirname, "../dist/_redirects");
+fs.writeFileSync(redirectsFile, "/* /index.html 200\n", "utf8");
+console.log(
+  "✅ Successfully wrote dist/_redirects for Render fallback routing",
+);

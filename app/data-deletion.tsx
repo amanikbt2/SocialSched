@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Shield, ArrowLeft, Mail, Search } from 'lucide-react-native';
+import { Trash2, ArrowLeft, Mail } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 export default function DataDetectionScreen() {
@@ -18,55 +18,58 @@ export default function DataDetectionScreen() {
       </TouchableOpacity>
 
       <View style={styles.header}>
-        <Search size={40} color="#4F46E5" />
-        <Text style={styles.title}>Data Detection Policy & Instructions</Text>
-        <Text style={styles.subtitle}>How SocialSched detects and processes post parameters locally</Text>
+        <Trash2 size={40} color="#4F46E5" />
+        <Text style={styles.title}>Data Deletion Instructions</Text>
+        <Text style={styles.subtitle}>How to delete your connected social account data</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>1. Introduction</Text>
+        <Text style={styles.sectionTitle}>1. Client-Side Local Storage Notice</Text>
         <Text style={styles.paragraph}>
-          SocialSched ("the App") is a local, client-side social media scheduler utility. To ensure smooth scheduling and publishing of social media posts, the App uses real-time client-side detection algorithms. This policy outlines how the App detects, processes, and handles post attributes, media types, and token statuses.
+          SocialSched is a client-side social media scheduling utility. We prioritize your privacy. Because the App operates entirely locally on your device (saving credentials, schedules, and media files directly within secure local database files on your hardware), we do not run backend databases to collect or store your personal credentials or social media information.
         </Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>2. Local Data Detection Mechanism</Text>
+        <Text style={styles.sectionTitle}>2. Deauthorizing and Deleting Connected Meta Data</Text>
         <Text style={styles.paragraph}>
-          All data detection happens locally in real-time inside the App sandbox. No details are harvested, tracked, or sent to external servers.
+          You can revoke the App's access to your Facebook profile and delete associated credentials at any time by following the official Meta deauthorization flow:
         </Text>
         <View style={styles.bulletList}>
           <Text style={styles.bulletItem}>
-            • <Text style={styles.bold}>Token Validity Detection:</Text> The App automatically sends minor asynchronous checks directly to Meta's APIs when opening the Settings drawer to detect whether linked page access tokens are "Active" or "Expired" so users can maintain connection integrity.
+            1. Go to your Facebook profile's <Text style={styles.bold}>Settings & Privacy &gt; Settings</Text>.
           </Text>
           <Text style={styles.bulletItem}>
-            • <Text style={styles.bold}>Text Attribute Parsing:</Text> When you compose captions or comments, the editor detects `#hashtags` and `@mentions` to help suggest category tag presets and prevent invalid handles.
+            2. In the left panel, click on <Text style={styles.bold}>Apps and Websites</Text> (or <Text style={styles.bold}>Business Integrations</Text> depending on your account setup).
           </Text>
           <Text style={styles.bulletItem}>
-            • <Text style={styles.bold}>Media Compatibility Scan:</Text> When attaching files to a Loop Container or individual post, the App detects resolution, file extension (.mp4, .jpeg, etc.), and file size to alert you if the file exceeds Facebook API specifications.
+            3. Find <Text style={styles.bold}>SocialSched</Text> (or <Text style={styles.bold}>smartflow</Text>) and click the <Text style={styles.bold}>Remove</Text> button.
+          </Text>
+          <Text style={styles.bulletItem}>
+            4. Confirm the removal to completely revoke the tokens.
           </Text>
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>3. User Privacy and Security</Text>
+        <Text style={styles.sectionTitle}>3. Clearing App Cache Locally</Text>
         <Text style={styles.paragraph}>
-          We value data minimization. The App does not run middle-man analytics or database tracking instances:
+          To wipe your offline logs, media library, and token caches from your computer or mobile device:
         </Text>
         <View style={styles.bulletList}>
           <Text style={styles.bulletItem}>
-            • Detected data parameters exist temporarily in local memory or inside the secure local database on your device (AsyncStorage/SQLite).
+            • Open the App's <Text style={styles.bold}>Settings Drawer</Text> (gear/menu icon in the top header) and click <Text style={styles.bold}>Wipe Local Storage</Text> or <Text style={styles.bold}>App Storage Folders</Text>.
           </Text>
           <Text style={styles.bulletItem}>
-            • No automated profiling or classification is performed on the content you write or upload.
+            • Alternatively, uninstalling the App will completely purge its local storage partition.
           </Text>
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>4. Contact Us</Text>
+        <Text style={styles.sectionTitle}>4. Contact Us for Support</Text>
         <Text style={styles.paragraph}>
-          If you have questions or feedback regarding our local data detection processes, please contact us:
+          If you have questions about local data cleanup, or would like us to verify your deauthorization status, please contact us:
         </Text>
         <View style={styles.contactRow}>
           <Mail size={16} color="#6B7280" />
@@ -118,7 +121,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     marginTop: 4,
-    textAlign: 'center',
   },
   section: {
     marginBottom: 24,
