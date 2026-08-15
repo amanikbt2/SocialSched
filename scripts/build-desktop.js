@@ -23,6 +23,27 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const originalMain = packageJson.main;
 const originalDependencies = packageJson.dependencies;
 
+let isCleanedUp = false;
+function restorePackageJson() {
+  if (isCleanedUp) return;
+  console.log('Restoring package.json main entry point and dependencies...');
+  packageJson.main = originalMain;
+  packageJson.dependencies = originalDependencies;
+  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+  isCleanedUp = true;
+}
+
+// Register exit and termination signal handlers to ensure restoration
+process.on('exit', restorePackageJson);
+process.on('SIGINT', () => {
+  restorePackageJson();
+  process.exit(130);
+});
+process.on('SIGTERM', () => {
+  restorePackageJson();
+  process.exit(143);
+});
+
 try {
   // 3. Swap main to electron/main.js & strip dependencies for the build
   console.log('Swapping entry point in package.json to electron/main.js and stripping dependencies for build...');
@@ -43,8 +64,5 @@ try {
   process.exitCode = 1;
 } finally {
   // 5. Restore original package.json
-  console.log('Restoring package.json main entry point and dependencies...');
-  packageJson.main = originalMain;
-  packageJson.dependencies = originalDependencies;
-  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+  restorePackageJson();
 }
