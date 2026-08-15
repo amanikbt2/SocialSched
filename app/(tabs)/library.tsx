@@ -436,6 +436,7 @@ export default function LibraryScreen() {
               value={colName}
               onChangeText={setColName}
               style={[styles.modalInput, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
+            />
                       {/* Collection Type Selector */}
             <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>COLLECTION TYPE</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
@@ -647,7 +648,7 @@ export default function LibraryScreen() {
 
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>EDIT DESCRIPTIONS LIST</Text>
               <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, lineHeight: 16 }}>
-                Modify individual items or paste/add items separated by "<==>".
+                {'Modify individual items or paste/add items separated by "<==>".'}
               </Text>
               <TextInput
                 multiline

@@ -7,13 +7,27 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "smartflow",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0F1115"
+      "backgroundColor": "#F8FAFC"
     },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F8FAFC",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#0F1115"
+          }
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true
     },
