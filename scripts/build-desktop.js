@@ -26,9 +26,43 @@ if (fs.existsSync(indexPath)) {
 }
 
 // 2. Read package.json
+// 2. Read package.json
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-const originalMain = packageJson.main;
-const originalDependencies = packageJson.dependencies;
+const originalMain = packageJson.main === 'electron/main.js' ? 'expo-router/entry' : packageJson.main;
+const originalDependencies = (packageJson.dependencies && Object.keys(packageJson.dependencies).length > 0)
+  ? packageJson.dependencies
+  : {
+      "@react-native-async-storage/async-storage": "1.23.1",
+      "caniuse-lite": "^1.0.30001809",
+      "date-fns": "^4.1.0",
+      "expo": "~52.0.0",
+      "expo-asset": "~11.0.5",
+      "expo-constants": "~17.0.0",
+      "expo-crypto": "~14.0.0",
+      "expo-file-system": "~18.0.0",
+      "expo-font": "~13.0.0",
+      "expo-haptics": "~14.0.0",
+      "expo-image-picker": "~16.0.0",
+      "expo-linking": "~7.0.0",
+      "expo-router": "~4.0.0",
+      "expo-sharing": "~13.0.0",
+      "expo-splash-screen": "~0.29.24",
+      "expo-sqlite": "~15.1.4",
+      "expo-status-bar": "~2.0.0",
+      "expo-system-ui": "~4.0.0",
+      "lodash.throttle": "^4.1.1",
+      "lucide-react-native": "^0.469.0",
+      "react": "18.3.1",
+      "react-dom": "^18.3.1",
+      "react-native": "0.76.9",
+      "react-native-gesture-handler": "~2.20.2",
+      "react-native-reanimated": "~3.16.1",
+      "react-native-safe-area-context": "4.12.0",
+      "react-native-screens": "~4.4.0",
+      "react-native-svg": "~15.8.0",
+      "react-native-web": "^0.19.13",
+      "zustand": "^5.0.0"
+    };
 
 let isCleanedUp = false;
 function restorePackageJson() {

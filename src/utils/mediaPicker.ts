@@ -14,7 +14,12 @@ export async function pickLocalMedia(): Promise<string[]> {
 
         input.onchange = (e: any) => {
           const files: File[] = Array.from(e.target.files || []);
-          const uris: string[] = files.map((file) => URL.createObjectURL(file));
+          const uris: string[] = files.map((file) => {
+            if ((file as any).path) {
+              return (file as any).path;
+            }
+            return URL.createObjectURL(file);
+          });
           resolve(uris);
         };
 
