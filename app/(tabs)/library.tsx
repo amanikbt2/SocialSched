@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Modal, Alert, Platform } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { Card } from '../../src/components/common/Card';
 import { FAB } from '../../src/components/common/FAB';
@@ -9,6 +9,45 @@ import { useMediaCollectionStore, MediaCollection } from '../../src/stores/useMe
 import { ImagePlus, Search, Star, Trash2, Folder, Film, Plus, X, Layers, Sparkles, CheckCircle2, Repeat, Clock, FileText, Edit2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { pickLocalMedia } from '../../src/utils/mediaPicker';
+
+const showAlert = (
+  title: string,
+  message: string,
+  buttons?: { text: string; style?: string; onPress?: () => void }[]
+) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 0) {
+      const confirmButton = buttons.find(
+        (btn) => btn.style === 'destructive' || btn.text.toLowerCase() === 'delete' || btn.text.toLowerCase() === 'ok'
+      );
+      const hasCancel = buttons.some(
+        (btn) => btn.style === 'cancel' || btn.text.toLowerCase() === 'cancel'
+      );
+      
+      let confirmed = true;
+      if (hasCancel) {
+        confirmed = window.confirm(`${title}\n\n${message}`);
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+
+      if (confirmed && confirmButton && confirmButton.onPress) {
+        confirmButton.onPress();
+      } else if (!confirmed) {
+        const cancelButton = buttons.find(
+          (btn) => btn.style === 'cancel' || btn.text.toLowerCase() === 'cancel'
+        );
+        if (cancelButton && cancelButton.onPress) {
+          cancelButton.onPress();
+        }
+      }
+    } else {
+      window.alert(`${title}\n\n${message}`);
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
 
 export default function LibraryScreen() {
   const colors = useThemeStore((state) => state.colors);
@@ -38,6 +77,8 @@ export default function LibraryScreen() {
   const [colStartMedia, setColStartMedia] = useState<string | undefined>(undefined);
   const [colEndMedia, setColEndMedia] = useState<string | undefined>(undefined);
   const [pastedUrl, setPastedUrl] = useState('');
+  const [colNameError, setColNameError] = useState(false);
+  const [colContentError, setColContentError] = useState(false);
 
   useEffect(() => {
     loadMedia();
@@ -49,6 +90,7 @@ export default function LibraryScreen() {
       const picked = await pickLocalMedia();
       if (picked && picked.length > 0) {
         setColMediaPool((prev) => [...prev, ...picked]);
+        setColContentError(false);
       }
     } catch (e) {
       console.warn('Bulk pick error:', e);
@@ -58,6 +100,7 @@ export default function LibraryScreen() {
   const handleAppendPastedUrl = () => {
     if (!pastedUrl.trim()) return;
     setColMediaPool((prev) => [...prev, pastedUrl.trim()]);
+    setColContentError(false);
     setPastedUrl('');
   };
 
@@ -70,33 +113,55 @@ export default function LibraryScreen() {
 
   const handleCreateCollectionSubmit = async () => {
     console.log('Starting handleCreateCollectionSubmit... Name:', colName, 'Type:', colType);
-    try {
-      if (!colName || !colName.trim()) {
-        Alert.alert('Validation Error', 'Please enter a collection name.');
-        return;
-      }
+    let hasError = false;
 
-      if (colType === 'media') {
-        if (colMediaPool.length === 0) {
-          Alert.alert('Validation Error', 'Please add at least one media item to the collection.');
-          return;
-        }
-        console.log('Creating media collection...');
-        await createCollection(colName.trim(), 'media', colMediaPool, colStartMedia, colEndMedia, []);
+    if (!colName || !colName.trim()) {
+      setColNameError(true);
+      hasError = true;
+    } else {
+      setColNameError(false);
+    }
+
+    if (colType === 'media') {
+      if (colMediaPool.length === 0) {
+        setColContentError(true);
+        hasError = true;
       } else {
-        if (!colTextRaw) {
-          Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
-          return;
-        }
+        setColContentError(false);
+      }
+    } else {
+      if (!colTextRaw || colTextRaw.trim().length === 0) {
+        setColContentError(true);
+        hasError = true;
+      } else {
         const lines = colTextRaw
           .split('<==>')
           .map((s) => s.trim())
           .filter((s) => s.length > 0);
 
         if (lines.length === 0) {
-          Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
-          return;
+          setColContentError(true);
+          hasError = true;
+        } else {
+          setColContentError(false);
         }
+      }
+    }
+
+    if (hasError) {
+      console.log('Validation failed: nameError =', !colName || !colName.trim(), 'contentError =', hasError);
+      return;
+    }
+
+    try {
+      if (colType === 'media') {
+        console.log('Creating media collection...');
+        await createCollection(colName.trim(), 'media', colMediaPool, colStartMedia, colEndMedia, []);
+      } else {
+        const lines = colTextRaw
+          .split('<==>')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
         console.log('Creating text collection with lines:', lines);
         await createCollection(colName.trim(), 'text', [], undefined, undefined, lines);
       }
@@ -110,11 +175,13 @@ export default function LibraryScreen() {
       setColMediaPool([]);
       setColStartMedia(undefined);
       setColEndMedia(undefined);
+      setColNameError(false);
+      setColContentError(false);
       setCreateModalVisible(false);
-      Alert.alert('Success', `Collection "${createdName}" created successfully!`);
+      showAlert('Success', `Collection "${createdName}" created successfully!`);
     } catch (error: any) {
       console.error('Error in handleCreateCollectionSubmit:', error);
-      Alert.alert('Error', `Failed to create collection: ${error.message || error}`);
+      showAlert('Error', `Failed to create collection: ${error.message || error}`);
     }
   };
 
@@ -122,7 +189,7 @@ export default function LibraryScreen() {
     try {
       if (!selectedViewCollection) return;
       if (!editColName.trim()) {
-        Alert.alert('Validation Error', 'Please enter a collection name.');
+        showAlert('Validation Error', 'Please enter a collection name.');
         return;
       }
 
@@ -132,7 +199,7 @@ export default function LibraryScreen() {
         .filter((s) => s.length > 0);
 
       if (lines.length === 0) {
-        Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
+        showAlert('Validation Error', 'Please enter at least one description in the text collection.');
         return;
       }
 
@@ -145,10 +212,10 @@ export default function LibraryScreen() {
       await updateCollection(updated);
       setSelectedViewCollection(updated);
       setIsEditingCol(false);
-      Alert.alert('Success', 'Collection updated successfully!');
+      showAlert('Success', 'Collection updated successfully!');
     } catch (error: any) {
       console.error('Error updating collection:', error);
-      Alert.alert('Error', `Failed to update collection: ${error.message || error}`);
+      showAlert('Error', `Failed to update collection: ${error.message || error}`);
     }
   };
 
@@ -242,7 +309,7 @@ export default function LibraryScreen() {
                     activeOpacity={0.7}
                     onPress={(e) => {
                       e.stopPropagation && e.stopPropagation();
-                      Alert.alert(
+                      showAlert(
                         'Delete Collection',
                         `Are you sure you want to delete the collection "${col.name}"?`,
                         [
@@ -435,26 +502,39 @@ export default function LibraryScreen() {
       <Modal
         visible={createModalVisible}
         animationType="slide"
-        onRequestClose={() => setCreateModalVisible(false)}
+        onRequestClose={() => { setCreateModalVisible(false); setColNameError(false); setColContentError(false); }}
       >
         <ScrollView style={[styles.modalScroll, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 60 }}>
           {/* Header */}
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Create Collection</Text>
-            <TouchableOpacity onPress={() => setCreateModalVisible(false)}>
+            <TouchableOpacity onPress={() => { setCreateModalVisible(false); setColNameError(false); setColContentError(false); }}>
               <X size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.modalContent}>
             {/* Collection Name */}
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>COLLECTION NAME</Text>
+            <Text style={[styles.inputLabel, { color: colNameError ? colors.danger : colors.textSecondary }]}>
+              COLLECTION NAME {colNameError && <Text style={{ color: colors.danger }}>* Required</Text>}
+            </Text>
             <TextInput
               placeholder="e.g. memes, quotes, reels"
               placeholderTextColor={colors.textMuted}
               value={colName}
-              onChangeText={setColName}
-              style={[styles.modalInput, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
+              onChangeText={(text) => {
+                setColName(text);
+                if (text.trim().length > 0) setColNameError(false);
+              }}
+              style={[
+                styles.modalInput,
+                {
+                  backgroundColor: colors.surface,
+                  color: colors.textPrimary,
+                  borderColor: colNameError ? colors.danger : colors.border,
+                  borderWidth: colNameError ? 1.5 : 1
+                }
+              ]}
             />
                       {/* Collection Type Selector */}
             <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>COLLECTION TYPE</Text>
@@ -495,7 +575,9 @@ export default function LibraryScreen() {
             {colType === 'media' ? (
               <>
                 {/* Media Upload Buttons */}
-                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 10 }]}>ADD PHOTO/VIDEO ITEMS</Text>
+                <Text style={[styles.inputLabel, { color: colContentError ? colors.danger : colors.textSecondary, marginTop: 10 }]}>
+                  ADD PHOTO/VIDEO ITEMS {colContentError && <Text style={{ color: colors.danger }}>* Please add at least 1 media item</Text>}
+                </Text>
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
                   <TouchableOpacity
                     onPress={handleBulkPickCollectionMedia}
@@ -568,7 +650,9 @@ export default function LibraryScreen() {
               </>
             ) : (
               <View style={{ marginTop: 10 }}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>DESCRIPTIONS LIST</Text>
+                <Text style={[styles.inputLabel, { color: colContentError ? colors.danger : colors.textSecondary }]}>
+                  DESCRIPTIONS LIST {colContentError && <Text style={{ color: colors.danger }}>* Required</Text>}
+                </Text>
                 <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, lineHeight: 16 }}>
                   Paste a block of descriptions/captions, separating each with "&lt;==&gt;". They will be automatically split into individual list items.
                 </Text>
@@ -578,13 +662,17 @@ export default function LibraryScreen() {
                   placeholder="Promo text #1...&#10;&lt;==&gt;&#10;Promo text #2...&#10;&lt;==&gt;&#10;Promo text #3..."
                   placeholderTextColor={colors.textMuted}
                   value={colTextRaw}
-                  onChangeText={setColTextRaw}
+                  onChangeText={(text) => {
+                    setColTextRaw(text);
+                    if (text.trim().length > 0) setColContentError(false);
+                  }}
                   style={[
                     styles.modalInput,
                     {
                       backgroundColor: colors.surface,
                       color: colors.textPrimary,
-                      borderColor: colors.border,
+                      borderColor: colContentError ? colors.danger : colors.border,
+                      borderWidth: colContentError ? 1.5 : 1,
                       height: 180,
                       textAlignVertical: 'top',
                       padding: 12,

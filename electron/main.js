@@ -31,7 +31,10 @@ function createWindow() {
       console.error('Failed to load local Expo dev server on port 8085:', err);
     });
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html')).catch(err => {
+    // Use loadURL with file:// and a hash so Expo Router can resolve routes
+    const distIndex = path.join(__dirname, '../dist/index.html');
+    const fileUrl = `file:///${distIndex.replace(/\\/g, '/')}`;
+    win.loadURL(fileUrl).catch(err => {
       console.error('Failed to load dist/index.html. Did you build the web bundle first?', err);
     });
   }
