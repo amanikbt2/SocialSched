@@ -154,3 +154,51 @@ export async function restoreOriginalMediaFile(
   }
 }
 
+/**
+ * Calculates the total size (in bytes) and file count of the hidden media folder.
+ */
+export async function getHiddenMediaStorageInfo(): Promise<{ sizeBytes: number; fileCount: number }> {
+  if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
+    return { sizeBytes: 0, fileCount: 0 };
+  }
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(HIDDEN_MEDIA_DIR);
+    if (!dirInfo.exists) {
+      return { sizeBytes: 0, fileCount: 0 };
+    }
+    const files = await FileSystem.readDirectoryAsync(HIDDEN_MEDIA_DIR);
+    let sizeBytes = 0;
+    for (const filename of files) {
+      const fileUri = HIDDEN_MEDIA_DIR + filename;
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (fileInfo.exists && !fileInfo.isDirectory) {
+        sizeBytes += fileInfo.size;
+      }
+    }
+    return { sizeBytes, fileCount: files.length };
+  } catch (error) {
+    console.warn('Error reading hidden media storage size:', error);
+    return { sizeBytes: 0, fileCount: 0 };
+  }
+}
+
+/**
+ * Deletes all files in the hidden media folder.
+ */
+export async function clearHiddenMediaStorage(): Promise<boolean> {
+  if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
+    return true;
+  }
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(HIDDEN_MEDIA_DIR);
+    if (dirInfo.exists) {
+      await FileSystem.deleteAsync(HIDDEN_MEDIA_DIR, { idempotent: true });
+    }
+    await FileSystem.makeDirectoryAsync(HIDDEN_MEDIA_DIR, { intermediates: true });
+    return true;
+  } catch (error) {
+    console.warn('Error clearing hidden media storage:', error);
+    return false;
+  }
+}
+

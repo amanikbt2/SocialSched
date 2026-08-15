@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { Card } from '../../src/components/common/Card';
@@ -6,6 +6,7 @@ import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useQueueStore } from '../../src/stores/useQueueStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { exportAppDataJSON, importAppDataJSON } from '../../src/services/backupService';
+import { getHiddenMediaStorageInfo, clearHiddenMediaStorage } from '../../src/utils/localMediaStorage';
 import { Moon, Sun, Monitor, HardDrive, Wifi, ShieldAlert, Download, Upload, Bell } from 'lucide-react-native';
 
 export default function SettingsScreen() {
@@ -15,6 +16,47 @@ export default function SettingsScreen() {
   const { posts, campaigns, loadData } = useCampaignStore();
 
   const [notifications, setNotifications] = useState(true);
+  const [mediaStorage, setMediaStorage] = useState<{ sizeBytes: number; fileCount: number }>({ sizeBytes: 0, fileCount: 0 });
+
+  const loadMediaStorageInfo = async () => {
+    const info = await getHiddenMediaStorageInfo();
+    setMediaStorage(info);
+  };
+
+  useEffect(() => {
+    loadMediaStorageInfo();
+  }, []);
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleClearMediaFolder = () => {
+    Alert.alert(
+      'Clear Media Storage?',
+      'This will delete all copied offline photos/videos from the app directory. Scheduled posts using these local files may fail to upload.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Storage',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await clearHiddenMediaStorage();
+            if (success) {
+              await loadMediaStorageInfo();
+              Alert.alert('Success', 'Local media folder cleared successfully!');
+            } else {
+              Alert.alert('Error', 'Failed to clear local media folder.');
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const handleExportBackup = async () => {
     try {
@@ -163,6 +205,26 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          <View style={[styles.storageInfo, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, marginTop: 12 }]}>
+            <HardDrive size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Offline Media Directory</Text>
+              <Text style={[styles.optionDesc, { color: colors.textSecondary }]}>
+                Folder: .socialsched_media/ {'\n'}
+                {mediaStorage.fileCount} files • {formatBytes(mediaStorage.sizeBytes)} used
+              </Text>
+            </View>
+            {mediaStorage.fileCount > 0 && (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleClearMediaFolder}
+                style={[styles.clearBtn, { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }]}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#EF4444' }}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <View style={styles.backupBtnRow}>
             <TouchableOpacity
               activeOpacity={0.85}
@@ -306,5 +368,12 @@ const styles = StyleSheet.create({
   backupText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  clearBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

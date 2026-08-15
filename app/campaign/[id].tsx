@@ -59,6 +59,9 @@ import {
   Trash2,
   MessageSquare,
   X,
+  Info,
+  Calendar,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import { AddContainerModal } from '../../src/components/container/AddContainerModal';
 import Svg, { Circle } from 'react-native-svg';
@@ -181,6 +184,7 @@ export default function ContainerDetailScreen() {
   const [mediaPoolModalVisible, setMediaPoolModalVisible] = useState(false);
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
   const [mediaPoolTab, setMediaPoolTab] = useState<'all' | 'fresh' | 'used'>('all');
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
   const getTomorrowString = () => {
     const d = new Date(Date.now() + 86400000);
     return d.toISOString().split('T')[0];
@@ -376,6 +380,14 @@ export default function ContainerDetailScreen() {
         </Text>
 
         <View style={styles.headerRightGroup}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setInfoModalVisible(true)}
+            style={[styles.infoHeaderBtn, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}
+          >
+            <Info size={15} color={colors.primary} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => {
@@ -1228,6 +1240,234 @@ export default function ContainerDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Container Info Summary Modal */}
+      <Modal
+        visible={infoModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoModalVisible(false)}
+      >
+        <View style={styles.infoModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setInfoModalVisible(false)}
+          />
+          <View style={[styles.infoModalCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            {/* Header */}
+            <View style={styles.infoModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Info size={18} color={colors.primary} />
+                <Text style={[styles.infoModalTitle, { color: colors.textPrimary, marginLeft: 8 }]}>{'Container Details'}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setInfoModalVisible(false)} style={{ padding: 4 }}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              {/* Name */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Name'}</Text>
+                <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{container.title}</Text>
+              </View>
+
+              {/* Type */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Type'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {container.isLoopContainer ? (
+                    <>
+                      <Repeat size={12} color="#8B5CF6" />
+                      <Text style={[styles.infoValue, { color: '#8B5CF6', marginLeft: 4 }]}>{'Loop Container'}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={12} color={colors.primary} />
+                      <Text style={[styles.infoValue, { color: colors.primary, marginLeft: 4 }]}>{'Standard Container'}</Text>
+                    </>
+                  )}
+                </View>
+              </View>
+
+              {/* Status */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Status'}</Text>
+                <View style={[styles.infoStatusPill, { backgroundColor: statusInfo.badgeColor + '20' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: statusInfo.badgeColor }}>{statusInfo.label}</Text>
+                </View>
+              </View>
+
+              {/* Platforms */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Platforms'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {(container.platforms || []).map((plat) => (
+                    <PlatformBadge key={plat} platform={plat} showLabel />
+                  ))}
+                </View>
+              </View>
+
+              {/* Schedule */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Schedule Start'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Calendar size={12} color={colors.textSecondary} />
+                  <Text style={[styles.infoValue, { color: colors.textPrimary, marginLeft: 4 }]}>
+                    {container.startDate || 'N/A'}{' '}{container.startTime || ''}
+                  </Text>
+                </View>
+              </View>
+
+              {/* End date */}
+              {!!container.hasEndDateLimit && (
+                <View style={styles.infoRow}>
+                  <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Schedule End'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Calendar size={12} color="#EF4444" />
+                    <Text style={[styles.infoValue, { color: colors.textPrimary, marginLeft: 4 }]}>
+                      {container.endDate || 'N/A'}{' '}{container.endTime || ''}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Interval */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Posting Interval'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Clock size={12} color={colors.primary} />
+                  <Text style={[styles.infoValue, { color: colors.textPrimary, marginLeft: 4 }]}>
+                    {'Every '}{container.intervalMinutes || 60}{' minutes'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Total Posts */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Total Posts'}</Text>
+                <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{String(containerPosts.length)}</Text>
+              </View>
+
+              {/* Scheduled vs Published */}
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Published'}</Text>
+                <Text style={[styles.infoValue, { color: '#10B981' }]}>
+                  {String(containerPosts.filter(p => p.status === 'published' || Date.parse(p.scheduledAt) <= Date.now()).length)}{' / '}{String(containerPosts.length)}
+                </Text>
+              </View>
+
+              {/* Loop-specific details */}
+              {!!container.isLoopContainer && (
+                <>
+                  <View style={[styles.infoSectionDivider, { borderColor: colors.border }]} />
+                  <Text style={[styles.infoSectionTitle, { color: '#8B5CF6' }]}>{'Loop Container Details'}</Text>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Current Round'}</Text>
+                    <Text style={[styles.infoValue, { color: '#8B5CF6', fontWeight: '900' }]}>{'#'}{String(container.currentLoopRound || 1)}</Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Media Per Post'}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <ImageIcon size={12} color={colors.primary} />
+                      <Text style={[styles.infoValue, { color: colors.textPrimary, marginLeft: 4 }]}>{String(container.mediaPerPost || 1)}{' image(s)'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Media Pool'}</Text>
+                    <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{String(container.loopMediaPool?.length || 0)}{' files'}</Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Used Media'}</Text>
+                    <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{String(container.usedMediaUris?.length || 0)}{' / '}{String(container.loopMediaPool?.length || 0)}</Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Captions Pool'}</Text>
+                    <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{String(container.loopDescriptions?.length || 0)}{' captions'}</Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Loop Completed'}</Text>
+                    <Text style={[styles.infoValue, { color: container.isLoopCompleted ? '#10B981' : colors.textMuted }]}>
+                      {container.isLoopCompleted ? 'Yes - Media Done' : 'No - Still Running'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Auto Next Round'}</Text>
+                    <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+                      {container.autoNextRound !== false ? 'Enabled' : 'Disabled'}
+                    </Text>
+                  </View>
+
+                  {/* Start & End Media */}
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Start Media'}</Text>
+                    <Text style={[styles.infoValue, { color: container.startMediaUri ? '#10B981' : colors.textMuted }]}>
+                      {container.startMediaUri ? 'Set (Intro/Cover)' : 'Not set'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'End Media'}</Text>
+                    <Text style={[styles.infoValue, { color: container.endMediaUri ? '#10B981' : colors.textMuted }]}>
+                      {container.endMediaUri ? 'Set (Outro/CTA)' : 'Not set'}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {/* First Comment */}
+              {!!container.enableFirstComment && (
+                <>
+                  <View style={[styles.infoSectionDivider, { borderColor: colors.border }]} />
+                  <View style={styles.infoRow}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'First Comment'}</Text>
+                    <Text style={[styles.infoValue, { color: colors.textPrimary }]} numberOfLines={2}>
+                      {container.firstComment || 'Enabled but empty'}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {/* Skip Time Ranges */}
+              {(container.skipTimeRanges?.length ?? 0) > 0 && (
+                <>
+                  <View style={[styles.infoSectionDivider, { borderColor: colors.border }]} />
+                  <Text style={[styles.infoSectionTitle, { color: colors.warning }]}>{'Skip Time Windows'}</Text>
+                  {container.skipTimeRanges!.map((skip, idx) => (
+                    <View key={skip.id || String(idx)} style={[styles.infoSkipRow, { backgroundColor: colors.warningContainer, borderColor: colors.warning + '40' }]}>
+                      <Clock size={11} color={colors.warning} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textPrimary, marginLeft: 6 }}>
+                        {skip.startTime}{' - '}{skip.endTime}
+                        {!!skip.label && <Text style={{ fontWeight: '400', color: colors.textSecondary }}>{' ('}{skip.label}{')'}</Text>}
+                      </Text>
+                      {!!skip.isRecurring && (
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: colors.warning, marginLeft: 6 }}>{'DAILY'}</Text>
+                      )}
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {/* Created at */}
+              <View style={[styles.infoSectionDivider, { borderColor: colors.border }]} />
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{'Created'}</Text>
+                <Text style={[styles.infoValue, { color: colors.textMuted, fontSize: 11 }]}>
+                  {new Date(container.createdAt).toLocaleString()}
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1859,5 +2099,90 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  infoHeaderBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  infoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoModalCard: {
+    width: '90%',
+    maxWidth: 420,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+  },
+  infoModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128,128,128,0.15)',
+  },
+  infoModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    minHeight: 36,
+  },
+  infoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+    flexShrink: 1,
+    maxWidth: '60%',
+  },
+  infoStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  infoSectionDivider: {
+    borderTopWidth: 1,
+    marginVertical: 10,
+  },
+  infoSectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  infoSkipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 6,
   },
 });
