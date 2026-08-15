@@ -253,7 +253,12 @@ export async function getSmartflowFoldersBreakdown(): Promise<FolderInfo[]> {
     if (electronAPI && electronAPI.getFoldersBreakdown) {
       return await electronAPI.getFoldersBreakdown();
     }
-    return [];
+    // Plain browser — filesystem not accessible, return stubs so the UI always has content
+    return [
+      { name: 'Media Library', path: 'smartflow/media/', sizeBytes: 0, fileCount: 0 },
+      { name: 'Temporary Cache', path: 'smartflow/temp/', sizeBytes: 0, fileCount: 0 },
+      { name: 'Exported Backups', path: 'smartflow/exports/', sizeBytes: 0, fileCount: 0 },
+    ];
   }
 
   if (!FileSystem.documentDirectory) return [];

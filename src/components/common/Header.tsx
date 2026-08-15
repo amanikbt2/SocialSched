@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Image, ScrollView, TextInput, Alert, Modal, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Image, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCampaignStore } from '../../stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
-import { AlertCircle, Menu, Moon, Database, Bell, Facebook, Instagram, Twitter, Video, Plus, Link2, Trash2, CheckCircle2, Zap, HardDrive, Folder, ChevronRight, X } from 'lucide-react-native';
+import { AlertCircle, Menu, Moon, Database, Bell, Facebook, Instagram, Twitter, Video, Plus, Link2, Trash2, CheckCircle2, Zap, HardDrive, Folder, ChevronRight, X, Shield } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AnimatedSheet } from './AnimatedSheet';
 import { SocialPlatform } from '../../db/types';
@@ -623,87 +623,98 @@ export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, s
                 })}
               </View>
             )}
-          </ScrollView>
+
+          {/* Privacy Policy */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => {
+              setSettingsVisible(false);
+              router.push('/privacy');
+            }}
+            style={[
+              styles.singleLineRow,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.border, marginTop: 8 },
+            ]}
+          >
+            <View style={styles.singleLineLeft}>
+              <Shield size={18} color={colors.textSecondary} />
+              <Text style={[styles.singleLineTitle, { color: colors.textPrimary }]}>
+                Privacy Policy
+              </Text>
+            </View>
+            <ChevronRight size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
         </AnimatedSheet>
       )}
 
-      {/* Storage Breakdown Modal */}
-      <Modal
+      {/* Storage Breakdown Sheet */}
+      <AnimatedSheet
         visible={storageModalVisible}
-        animationType="slide"
-        onRequestClose={() => setStorageModalVisible(false)}
+        onClose={() => setStorageModalVisible(false)}
+        fullScreen={false}
+        title="App Storage Folders"
+        subtitle="Directories created by Smartflow on this device"
       >
-        <View style={[styles.modalWrapper, { backgroundColor: colors.background, paddingTop: Platform.OS === 'ios' ? 50 : 20 }]}>
-          {/* Header */}
-          <View style={[styles.modalHeaderRow, { borderBottomColor: colors.border, paddingBottom: 16 }]}>
-            <View>
-              <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Offline Storage</Text>
-              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>Manage directories created by the app</Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setStorageModalVisible(false)}
-              style={[styles.closeBtn, { backgroundColor: colors.surfaceVariant }]}
-            >
-              <X size={16} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Folder List */}
-          <ScrollView contentContainerStyle={{ padding: 16 }}>
-            {isLoadingBreakdown ? (
-              <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
-            ) : foldersBreakdown.length === 0 ? (
-              <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 40 }}>
-                No storage folders found.
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          {isLoadingBreakdown ? (
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40, marginBottom: 40 }} />
+          ) : foldersBreakdown.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
+              <Folder size={36} color={colors.textMuted} />
+              <Text style={{ color: colors.textSecondary, fontSize: 14, textAlign: 'center' }}>
+                No storage folders found on this platform.{'\n'}Run the app on mobile or desktop to manage local files.
               </Text>
-            ) : (
-              foldersBreakdown.map((folder) => {
-                const isMedia = folder.name === 'Media Library';
-                return (
-                  <View
-                    key={folder.path}
-                    style={[
-                      styles.folderItemCard,
-                      { backgroundColor: colors.surfaceVariant, borderColor: colors.border }
-                    ]}
-                  >
-                    <View style={{ flex: 1, gap: 4, paddingRight: 8 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
-                        {folder.name}
+            </View>
+          ) : (
+            foldersBreakdown.map((folder) => {
+              const isMedia = folder.name === 'Media Library';
+              return (
+                <View
+                  key={folder.path}
+                  style={[
+                    styles.folderItemCard,
+                    { backgroundColor: colors.surfaceVariant, borderColor: colors.border }
+                  ]}
+                >
+                  <View style={{ flex: 1, gap: 4, paddingRight: 8 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
+                      {folder.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary, fontFamily: 'monospace' }}>
+                      {folder.path}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: folder.sizeBytes > 0 ? colors.primary : colors.textMuted, fontWeight: '700', marginTop: 4 }}>
+                      {folder.fileCount} {folder.fileCount === 1 ? 'file' : 'files'} • {formatBytes(folder.sizeBytes)} used
+                    </Text>
+                    {isMedia && folder.fileCount > 0 && (
+                      <Text style={{ fontSize: 10, color: colors.danger, marginTop: 2 }}>
+                        ⚠️ Clearing this may break scheduled posts using local media.
                       </Text>
-                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-                        Path: {folder.path}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: colors.textPrimary, fontWeight: '700', marginTop: 4 }}>
-                        {folder.fileCount} files • {formatBytes(folder.sizeBytes)} used
-                      </Text>
-                      {isMedia && folder.fileCount > 0 && (
-                        <Text style={{ fontSize: 10, color: colors.danger, marginTop: 2 }}>
-                          ⚠️ Clearing this will disconnect offline collection images.
-                        </Text>
-                      )}
-                    </View>
-
-                    {folder.fileCount > 0 && (
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() => handleWipeSpecificFolder(folder)}
-                        style={[
-                          styles.wipeBtn,
-                          { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }
-                        ]}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#EF4444' }}>Wipe</Text>
-                      </TouchableOpacity>
                     )}
                   </View>
-                );
-              })
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
+
+                  {folder.fileCount > 0 && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => handleWipeSpecificFolder(folder)}
+                      style={[
+                        styles.wipeBtn,
+                        { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }
+                      ]}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#EF4444' }}>Wipe</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })
+          )}
+          <View style={{ height: 30 }} />
+        </ScrollView>
+      </AnimatedSheet>
     </>
   );
 };
