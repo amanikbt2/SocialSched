@@ -14,12 +14,12 @@ import {
   CATEGORY_TAG_PRESETS,
 } from '../src/utils/tagSuggestionService';
 import { MentionPicker } from '../src/components/common/MentionPicker';
-import { useAccountStore } from '../src/stores/useAccountStore';
+import { useSocialAccountsStore } from '../src/stores/useSocialAccountsStore';
 
 export default function CreatePostScreen() {
   const colors = useThemeStore((state) => state.colors);
   const { campaigns, addPost } = useCampaignStore();
-  const activePage = useAccountStore((state) => state.activePage);
+  const activePage = useSocialAccountsStore((state) => state.activePage);
   const router = useRouter();
 
   const [caption, setCaption] = useState('');
