@@ -92,6 +92,12 @@ function createWindow() {
 // IPC Handlers for Local Storage in Windows .exe
 ipcMain.handle('save-media-file', async (event, sourcePath) => {
   if (!sourcePath) return '';
+
+  // If it's already a virtual URL we created, return it
+  if (sourcePath.startsWith('app://') && sourcePath.includes('/__media__/')) {
+    return sourcePath;
+  }
+
   // Clean sourcePath if it starts with file:// or similar
   let cleanPath = sourcePath;
   if (cleanPath.startsWith('file:///')) {
@@ -101,8 +107,9 @@ ipcMain.handle('save-media-file', async (event, sourcePath) => {
   }
 
   // If it's already in our media dir, return it
-  if (cleanPath.includes('.smartflow_media')) {
-    return sourcePath;
+  if (cleanPath.includes('.smartflow') && cleanPath.includes('media')) {
+    const filename = path.basename(cleanPath);
+    return `app://localhost/__media__/${filename}`;
   }
 
   try {
@@ -114,7 +121,7 @@ ipcMain.handle('save-media-file', async (event, sourcePath) => {
     // Copy file
     fs.copyFileSync(cleanPath, destinationPath);
     console.log(`💾 Saved desktop media file: ${destinationPath}`);
-    return `file:///${destinationPath.replace(/\\/g, '/')}`;
+    return `app://localhost/__media__/${filename}`;
   } catch (error) {
     console.warn('Failed to copy desktop media file:', error);
     return sourcePath;
@@ -244,6 +251,26 @@ app.whenReady().then(() => {
     // Default to index.html if pointing to root
     if (urlPath === '' || urlPath === '/') {
       urlPath = '/index.html';
+    }
+
+    // Serve local media requests from ~/.smartflow/media/ folder
+    if (urlPath.startsWith('/__media__/')) {
+      const filename = urlPath.slice('/__media__/'.length);
+      const absolutePath = path.normalize(path.join(MEDIA_DIR, filename));
+      
+      // Security check: ensure file resolves inside the MEDIA_DIR folder bounds
+      if (!absolutePath.startsWith(MEDIA_DIR)) {
+        return new Response('Access Denied', { status: 403 });
+      }
+
+      if (!fs.existsSync(absolutePath)) {
+        return new Response('Not Found', { status: 404 });
+      }
+
+      const mimeType = getMimeType(absolutePath);
+      return new Response(fs.createReadStream(absolutePath), {
+        headers: { 'Content-Type': mimeType }
+      });
     }
 
     // Remove leading slash for path.join

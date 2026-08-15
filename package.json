@@ -7,7 +7,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web --port 8085",
-    "build:web": "npx expo export -p web",
+    "build:web": "npx expo export -p web && node scripts/add-static-privacy.js",
     "electron:start": "electron electron/main.js",
     "electron:package": "node scripts/build-desktop.js --dir",
     "electron:build": "node scripts/build-desktop.js --win --x64"

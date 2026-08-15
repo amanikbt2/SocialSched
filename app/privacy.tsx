@@ -67,7 +67,7 @@ export default function PrivacyPolicyScreen() {
         </Text>
         <View style={styles.contactRow}>
           <Mail size={16} color="#6B7280" />
-          <Text style={styles.contactText}>support@socialsched.local</Text>
+          <Text style={styles.contactText}>amanikbt1@gmail.com</Text>
         </View>
       </View>
     </ScrollView>

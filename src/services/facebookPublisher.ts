@@ -247,7 +247,7 @@ async function uploadSinglePhotoToMeta(
 
   // 2. Local File / Blob / URI -> Upload actual binary image via FormData
   // (Only attempt on native, or on web if it's a blob: or accessible URL)
-  const isBlobOrAccessible = imageUri.startsWith('blob:') || imageUri.startsWith('data:');
+  const isBlobOrAccessible = imageUri.startsWith('blob:') || imageUri.startsWith('data:') || imageUri.startsWith('app://');
   if (Platform.OS !== 'web' || isBlobOrAccessible) {
     try {
       const formData = new FormData();
