@@ -9,6 +9,7 @@ import { useMediaCollectionStore, MediaCollection } from '../../src/stores/useMe
 import { ImagePlus, Search, Star, Trash2, Folder, Film, Plus, X, Layers, Sparkles, CheckCircle2, Repeat, Clock, FileText, Edit2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { pickLocalMedia } from '../../src/utils/mediaPicker';
+import { saveMultipleMediaToHiddenFolder } from '../../src/utils/localMediaStorage';
 
 const showAlert = (
   title: string,
@@ -252,6 +253,61 @@ export default function LibraryScreen() {
       console.error('Error updating collection:', error);
       showAlert('Error', `Failed to update collection: ${error.message || error}`);
     }
+  };
+
+  const handleAddCollectionMedia = async () => {
+    if (!selectedViewCollection) return;
+    try {
+      const picked = await pickLocalMedia();
+      if (picked && picked.length > 0) {
+        const savedLocalUris = await saveMultipleMediaToHiddenFolder(picked);
+        const updated: MediaCollection = {
+          ...selectedViewCollection,
+          mediaUris: [...(selectedViewCollection.mediaUris || []), ...savedLocalUris],
+        };
+        await updateCollection(updated);
+        setSelectedViewCollection(updated);
+        showAlert('Success', `${picked.length} item(s) added to collection.`);
+      }
+    } catch (e) {
+      console.warn('Failed to add media to collection:', e);
+      showAlert('Error', 'Failed to pick or save media items.');
+    }
+  };
+
+  const handleRemoveCollectionMedia = async (uriToRemove: string) => {
+    if (!selectedViewCollection) return;
+    showAlert(
+      'Remove Media',
+      'Are you sure you want to remove this media item from the collection?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const updatedUris = (selectedViewCollection.mediaUris || []).filter(
+              (uri) => uri !== uriToRemove
+            );
+            let updatedStart = selectedViewCollection.startMediaUri;
+            let updatedEnd = selectedViewCollection.endMediaUri;
+            if (selectedViewCollection.startMediaUri === uriToRemove) updatedStart = undefined;
+            if (selectedViewCollection.endMediaUri === uriToRemove) updatedEnd = undefined;
+
+            const updated: MediaCollection = {
+              ...selectedViewCollection,
+              mediaUris: updatedUris,
+              startMediaUri: updatedStart,
+              endMediaUri: updatedEnd,
+            };
+
+            await updateCollection(updated);
+            setSelectedViewCollection(updated);
+            showAlert('Success', 'Media item removed from collection.');
+          },
+        },
+      ]
+    );
   };
 
   const handlePickMedia = async () => {
@@ -916,6 +972,25 @@ export default function LibraryScreen() {
                   {'COLLECTION ITEMS (' + (selectedViewCollection.mediaUris?.length || 0) + ')'}
                 </Text>
                 <View style={styles.collectionGrid}>
+                  {/* Plus button inside the collection grid to add media */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleAddCollectionMedia}
+                    style={[
+                      styles.gridCell,
+                      {
+                        borderColor: colors.primary,
+                        borderStyle: 'dashed',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        backgroundColor: `${colors.primary}08`,
+                      },
+                    ]}
+                  >
+                    <Plus size={24} color={colors.primary} />
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: colors.primary, marginTop: 4 }}>Add Media</Text>
+                  </TouchableOpacity>
+
                   {(selectedViewCollection.mediaUris || []).map((uri, index) => {
                     const isVideo =
                       uri.toLowerCase().endsWith('.mp4') ||
@@ -923,19 +998,35 @@ export default function LibraryScreen() {
                       uri.toLowerCase().endsWith('.mkv') ||
                       uri.toLowerCase().endsWith('.webm');
                     return (
-                      <TouchableOpacity
+                      <View
                         key={`${uri}-${index}`}
-                        activeOpacity={0.9}
-                        onPress={() => setFullscreenPreviewUri(uri)}
                         style={[styles.gridCell, { borderColor: colors.border }]}
                       >
-                        <Image source={{ uri }} style={styles.gridImage} resizeMode="cover" />
-                        {isVideo && (
-                          <View style={styles.videoGridBadge}>
-                            <Film size={12} color="#FFFFFF" />
-                          </View>
-                        )}
-                      </TouchableOpacity>
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          onPress={() => setFullscreenPreviewUri(uri)}
+                          style={{ width: '100%', height: '100%' }}
+                        >
+                          <Image source={{ uri }} style={styles.gridImage} resizeMode="cover" />
+                          {isVideo && (
+                            <View style={styles.videoGridBadge}>
+                              <Film size={12} color="#FFFFFF" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+
+                        {/* Trash Button Overlay */}
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => handleRemoveCollectionMedia(uri)}
+                          style={[
+                            styles.removeGridMediaBtn,
+                            { backgroundColor: 'rgba(0, 0, 0, 0.55)' },
+                          ]}
+                        >
+                          <Trash2 size={12} color={colors.danger} />
+                        </TouchableOpacity>
+                      </View>
                     );
                   })}
                 </View>
@@ -1221,6 +1312,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '700',
+  },
+  removeGridMediaBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    padding: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gridContainer: {
     padding: 20,

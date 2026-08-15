@@ -144,6 +144,28 @@ ipcMain.handle('clear-storage', async () => {
 });
 
 app.whenReady().then(() => {
+  // Define custom app:// protocol handler
+  protocol.handle('app', (request) => {
+    let urlPath = request.url.slice('app://'.length);
+    // Remove query strings or hash parameters from the physical path resolver
+    urlPath = urlPath.split('?')[0].split('#')[0];
+    
+    // Default to index.html if pointing to empty root
+    if (urlPath === '' || urlPath === '/') {
+      urlPath = 'index.html';
+    }
+
+    const absolutePath = path.normalize(path.join(__dirname, '../dist', urlPath));
+    
+    // Security check: ensure file resolves inside the dist folder bounds
+    const distPath = path.normalize(path.join(__dirname, '../dist'));
+    if (!absolutePath.startsWith(distPath)) {
+      return new Response('Access Denied', { status: 403 });
+    }
+
+    return net.fetch(url.pathToFileURL(absolutePath).toString());
+  });
+
   createWindow();
 
   app.on('activate', () => {

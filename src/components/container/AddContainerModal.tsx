@@ -246,6 +246,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   );
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedTextCollectionId, setSelectedTextCollectionId] = useState<string | null>(null);
+  const [isTextColDropdownExpanded, setIsTextColDropdownExpanded] = useState<boolean>(false);
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
   const [mediaPoolExpanded, setMediaPoolExpanded] = useState<boolean>(true);
@@ -1410,76 +1411,154 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {/* Tab 1: DESCRIPTIONS */}
             {loopTab === 'descriptions' && (
               <View style={styles.tabBodyBox}>
-                {/* Text Collection Dropdown Selector */}
+                {/* Text Collection Collapsible Selector */}
                 <View style={{ marginBottom: 12 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 4 }]}>
                     LOAD FROM TEXT COLLECTION
                   </Text>
 
                   {collections.filter(c => c.type === 'text').length === 0 ? (
-                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16, marginBottom: 8 }}>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
                       No text collections created yet. Go to the "Media" tab to create reusable text collections.
                     </Text>
                   ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4, paddingBottom: 8 }}>
-                      {/* "None" option — default */}
+                    <>
+                      {/* Trigger Button */}
                       <TouchableOpacity
                         activeOpacity={0.8}
-                        onPress={() => {
-                          setSelectedTextCollectionId(null);
-                          setLoopDescriptions([]);
-                        }}
+                        onPress={() => setIsTextColDropdownExpanded(!isTextColDropdownExpanded)}
                         style={{
                           flexDirection: 'row',
                           alignItems: 'center',
+                          justifyContent: 'space-between',
                           paddingHorizontal: 14,
-                          paddingVertical: 8,
-                          borderRadius: 14,
-                          backgroundColor: !selectedTextCollectionId ? colors.primary : colors.surface,
-                          borderColor: !selectedTextCollectionId ? colors.primary : colors.border,
+                          paddingVertical: 12,
+                          borderRadius: 12,
                           borderWidth: 1,
-                          gap: 6
+                          borderColor: colors.border,
+                          backgroundColor: colors.surface,
+                          marginBottom: isTextColDropdownExpanded ? 8 : 12,
+                          marginTop: 4
                         }}
                       >
-                        <X size={13} color={!selectedTextCollectionId ? '#FFFFFF' : colors.textSecondary} />
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: !selectedTextCollectionId ? '#FFFFFF' : colors.textSecondary }}>
-                          None
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <FileText size={16} color={selectedTextCollectionId ? colors.primary : colors.textSecondary} />
+                          <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: selectedTextCollectionId ? '700' : '400' }}>
+                            {selectedTextCollectionId 
+                              ? collections.find(c => c.id === selectedTextCollectionId)?.name || 'Selected Collection' 
+                              : 'None (Manual Entry)'}
+                          </Text>
+                        </View>
+                        {isTextColDropdownExpanded ? <ChevronUp size={16} color={colors.textSecondary} /> : <ChevronDown size={16} color={colors.textSecondary} />}
                       </TouchableOpacity>
 
-                      {/* Text collection chips */}
-                      {collections.filter(c => c.type === 'text').map((col) => {
-                        const isSelected = selectedTextCollectionId === col.id;
-                        return (
+                      {/* Dropdown Options List */}
+                      {isTextColDropdownExpanded && (
+                        <View style={{
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          borderWidth: 1,
+                          borderRadius: 12,
+                          marginBottom: 16,
+                          overflow: 'hidden',
+                          elevation: 2,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 2
+                        }}>
+                          {/* "None" option */}
                           <TouchableOpacity
-                            key={col.id}
                             activeOpacity={0.8}
                             onPress={() => {
-                              setLoopDescriptions(col.descriptions || []);
-                              setSelectedTextCollectionId(col.id);
+                              setSelectedTextCollectionId(null);
+                              setLoopDescriptions([]);
+                              setIsTextColDropdownExpanded(false);
                             }}
                             style={{
                               flexDirection: 'row',
                               alignItems: 'center',
-                              paddingHorizontal: 14,
-                              paddingVertical: 8,
-                              borderRadius: 14,
-                              backgroundColor: isSelected ? colors.primary : colors.primaryContainer,
-                              borderColor: isSelected ? colors.primary : colors.primary + '60',
-                              borderWidth: 1,
-                              gap: 6
+                              padding: 12,
+                              borderBottomWidth: 1,
+                              borderBottomColor: colors.border,
+                              backgroundColor: !selectedTextCollectionId ? colors.primaryContainer + '20' : 'transparent',
+                              gap: 8
                             }}
                           >
-                            <FileText size={13} color={isSelected ? '#FFFFFF' : colors.primary} />
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#FFFFFF' : colors.primary }}>
-                              {col.name} ({col.descriptions?.length || 0})
+                            <X size={14} color={colors.textSecondary} />
+                            <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: !selectedTextCollectionId ? '700' : '400' }}>
+                              None (Manual Entry)
                             </Text>
                           </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
+
+                          {/* Text collections options */}
+                          {collections.filter(c => c.type === 'text').map((col) => {
+                            const isSelected = selectedTextCollectionId === col.id;
+                            return (
+                              <TouchableOpacity
+                                key={col.id}
+                                activeOpacity={0.8}
+                                onPress={() => {
+                                  setSelectedTextCollectionId(col.id);
+                                  setLoopDescriptions([]); // Reset until "Generate" is explicitly pressed
+                                  setIsTextColDropdownExpanded(false);
+                                }}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  padding: 12,
+                                  borderBottomWidth: 1,
+                                  borderBottomColor: colors.border,
+                                  backgroundColor: isSelected ? colors.primaryContainer + '20' : 'transparent',
+                                  gap: 8
+                                }}
+                              >
+                                <FileText size={14} color={colors.primary} />
+                                <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: isSelected ? '700' : '400', flex: 1 }}>
+                                  {col.name} ({col.descriptions?.length || 0})
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </>
                   )}
                 </View>
+
+                {/* Explicit Generate Button when collection is selected */}
+                {selectedTextCollectionId && (
+                  <View style={{ marginBottom: 16 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        const col = collections.find(c => c.id === selectedTextCollectionId);
+                        if (col && col.descriptions) {
+                          setLoopDescriptions([...col.descriptions]);
+                        }
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: colors.success,
+                        paddingVertical: 12,
+                        borderRadius: 12,
+                        gap: 8,
+                        shadowColor: colors.success,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 4,
+                        elevation: 3
+                      }}
+                    >
+                      <Sparkles size={16} color="#FFFFFF" />
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                        Generate Loop Descriptions ({collections.find(c => c.id === selectedTextCollectionId)?.descriptions?.length || 0})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 {/* When NO collection selected → show manual input */}
                 {!selectedTextCollectionId && (

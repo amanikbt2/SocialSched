@@ -14,8 +14,8 @@ function runCmd(cmd) {
 console.log('Building web bundle...');
 runCmd('npm run build:web');
 
-// 1.5 Fix absolute paths + inject Electron routing fix in dist/index.html
-console.log('Fixing paths in dist/index.html for Electron file:// compatibility...');
+// 1.5 Fix absolute paths in dist/index.html for Electron compatibility
+console.log('Fixing paths in dist/index.html for Electron compatibility...');
 const indexPath = path.join(__dirname, '../dist/index.html');
 if (fs.existsSync(indexPath)) {
   let indexHtml = fs.readFileSync(indexPath, 'utf8');
@@ -24,27 +24,8 @@ if (fs.existsSync(indexPath)) {
   indexHtml = indexHtml.replace(/href="\/(?!\/)/g, 'href="./');
   indexHtml = indexHtml.replace(/src="\/(?!\/)/g, 'src="./');
 
-  // Inject script to redirect file:// routes — Expo Router uses pathname for routing,
-  // but file:// makes the full file path the "pathname", causing Unmatched Route.
-  // This script rewrites the location so Expo Router sees "/" as the route.
-  const routerFixScript = `
-  <script>
-    // Electron file:// routing fix: ensure Expo Router sees "/" as root
-    (function() {
-      if (window.location.protocol === 'file:') {
-        // Only do this once; push state so router sees "/"
-        if (window.location.hash === '' && window.location.pathname !== '/') {
-          window.history.replaceState(null, '', '/');
-        }
-      }
-    })();
-  </script>`;
-
-  // Inject before closing </head>
-  indexHtml = indexHtml.replace('</head>', routerFixScript + '\n</head>');
-
   fs.writeFileSync(indexPath, indexHtml, 'utf8');
-  console.log('Successfully patched dist/index.html for Electron!');
+  console.log('Successfully fixed absolute paths in dist/index.html!');
 } else {
   console.warn('Warning: dist/index.html not found! Skipping path fix.');
 }
