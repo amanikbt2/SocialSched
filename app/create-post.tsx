@@ -13,10 +13,13 @@ import {
   extractMentions,
   CATEGORY_TAG_PRESETS,
 } from '../src/utils/tagSuggestionService';
+import { MentionPicker } from '../src/components/common/MentionPicker';
+import { useAccountStore } from '../src/stores/useAccountStore';
 
 export default function CreatePostScreen() {
   const colors = useThemeStore((state) => state.colors);
   const { campaigns, addPost } = useCampaignStore();
+  const activePage = useAccountStore((state) => state.activePage);
   const router = useRouter();
 
   const [caption, setCaption] = useState('');
@@ -160,6 +163,14 @@ export default function CreatePostScreen() {
           </View>
         </View>
 
+        {/* Interactive @Mention & Page Tag Autocomplete Picker */}
+        <MentionPicker
+          text={caption}
+          onSelectMention={setCaption}
+          accessToken={activePage?.accessToken}
+          colors={colors}
+        />
+
         {/* Smart Hashtags & @Mentions Suggestion Bar */}
         {(() => {
           const suggestions = getSmartSuggestions(caption, activeCategory);
@@ -265,6 +276,14 @@ export default function CreatePostScreen() {
             style={[styles.captionInput, { color: colors.textPrimary, minHeight: 45 }]}
           />
         </View>
+
+        {/* Interactive @Mention & Page Tag Autocomplete Picker */}
+        <MentionPicker
+          text={firstComment}
+          onSelectMention={setFirstComment}
+          accessToken={activePage?.accessToken}
+          colors={colors}
+        />
 
         {/* Platform Selection Chips */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Target Platforms</Text>

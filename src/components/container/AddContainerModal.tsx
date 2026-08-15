@@ -36,6 +36,8 @@ import {
   extractHashtags,
   extractMentions,
 } from '../../utils/tagSuggestionService';
+import { MentionPicker } from '../common/MentionPicker';
+import { useAccountStore } from '../../stores/useAccountStore';
 import {
   Plus,
   Trash2,
@@ -108,6 +110,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 }) => {
   const colors = useThemeStore((state) => state.colors);
   const { addCampaign, updateCampaign, addPost, addPostsBatch, clearScheduledPostsForCampaign } = useCampaignStore();
+  const activePage = useAccountStore((state) => state.activePage);
 
   const [title, setTitle] = useState(existingContainer?.title || '');
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(
@@ -1600,6 +1603,12 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                       numberOfLines={isSmartSplitEnabled ? 8 : 3}
                       value={newDescInput}
                       onChangeText={setNewDescInput}
+                    />
+                    <MentionPicker
+                      text={newDescInput}
+                      onSelectMention={setNewDescInput}
+                      accessToken={activePage?.accessToken}
+                      colors={colors}
                     />
                     <TouchableOpacity
                       activeOpacity={0.8}
