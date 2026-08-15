@@ -243,6 +243,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   );
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
+  const [mediaPoolExpanded, setMediaPoolExpanded] = useState<boolean>(true);
 
   // Start & End media state
   const [startMediaUri, setStartMediaUri] = useState<string | null>(existingContainer?.startMediaUri || null);
@@ -1567,29 +1568,53 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
-                {/* Media Pool Grid */}
-                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>
-                  MEDIA POOL ITEMS ({loopMediaPool.length})
-                </Text>
-
-                {loopMediaPool.length === 0 ? (
-                  <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
-                    No media items in pool yet. Tap "Bulk Pick Photos/Videos" to select photos from phone storage.
+                {/* Media Pool Grid Header (Collapsible) */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setMediaPoolExpanded(!mediaPoolExpanded)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginTop: 16,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 0 }]}>
+                    MEDIA POOL ITEMS ({loopMediaPool.length})
                   </Text>
-                ) : (
-                  <View style={styles.mediaPoolGrid}>
-                    {loopMediaPool.map((uri, idx) => (
-                      <View key={idx} style={styles.mediaGridCell}>
-                        <Image source={{ uri }} style={styles.mediaGridThumb} resizeMode="cover" />
-                        <TouchableOpacity
-                          onPress={() => handleRemoveMediaFromPool(idx)}
-                          style={styles.removeMediaBadge}
-                        >
-                          <Trash2 size={12} color="#FFFFFF" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                      {mediaPoolExpanded ? 'Collapse' : 'Expand'}
+                    </Text>
+                    {mediaPoolExpanded ? (
+                      <ChevronUp size={16} color={colors.textSecondary} />
+                    ) : (
+                      <ChevronDown size={16} color={colors.textSecondary} />
+                    )}
                   </View>
+                </TouchableOpacity>
+
+                {mediaPoolExpanded && (
+                  loopMediaPool.length === 0 ? (
+                    <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
+                      No media items in pool yet. Tap "Bulk Pick Photos/Videos" to select photos from phone storage.
+                    </Text>
+                  ) : (
+                    <View style={styles.mediaPoolGrid}>
+                      {loopMediaPool.map((uri, idx) => (
+                        <View key={idx} style={styles.mediaGridCell}>
+                          <Image source={{ uri }} style={styles.mediaGridThumb} resizeMode="cover" />
+                          <TouchableOpacity
+                            onPress={() => handleRemoveMediaFromPool(idx)}
+                            style={styles.removeMediaBadge}
+                          >
+                            <Trash2 size={12} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )
                 )}
               </View>
             )}

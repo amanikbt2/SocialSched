@@ -831,15 +831,36 @@ export default function ContainerDetailScreen() {
                     );
                   })()}
                   {/* First Comment Box */}
-                  {!!post.firstComment && post.firstComment.trim() !== '' && (
-                    <View style={{ backgroundColor: colors.primaryContainer + '20', borderColor: colors.primary + '50', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, marginBottom: 4 }}>
-                        <MessageSquare size={12} color={colors.primary} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>{'FIRST COMMENT'}</Text>
+                  {!!post.firstComment && post.firstComment.trim() !== '' && (() => {
+                    const commentHashtags = extractHashtags(post.firstComment);
+                    const commentMentions = extractMentions(post.firstComment);
+                    return (
+                      <View style={{ backgroundColor: colors.primaryContainer + '20', borderColor: colors.primary + '50', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, marginBottom: 4 }}>
+                          <MessageSquare size={12} color={colors.primary} />
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>{'FIRST COMMENT'}</Text>
+                        </View>
+                        <Text style={{ fontSize: 12, color: colors.textPrimary, lineHeight: 16, marginBottom: (commentHashtags.length > 0 || commentMentions.length > 0) ? 8 : 0 }}>{post.firstComment}</Text>
+                        
+                        {(commentHashtags.length > 0 || commentMentions.length > 0) && (
+                          <View style={[styles.tagsRow, { marginTop: 4, marginBottom: 0 }]}>
+                            {commentHashtags.map((tag) => (
+                              <View key={tag} style={[styles.tagPill, { backgroundColor: colors.primaryContainer }]}>
+                                <Tag size={10} color={colors.primary} />
+                                <Text style={[styles.tagText, { color: colors.primary }]}>{tag}</Text>
+                              </View>
+                            ))}
+                            {commentMentions.map((men) => (
+                              <View key={men} style={[styles.tagPill, { backgroundColor: '#3B82F618', borderColor: '#3B82F640', borderWidth: 1 }]}>
+                                <AtSign size={10} color="#3B82F6" />
+                                <Text style={[styles.tagText, { color: '#3B82F6', fontWeight: '800' }]}>{men}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.textPrimary, lineHeight: 16 }}>{post.firstComment}</Text>
-                    </View>
-                  )}
+                    );
+                  })()}
                   {/* Facebook Multi-Image Grid View */}
                   {post.images && post.images.length > 0 && (
                     <FacebookMediaGrid images={post.images} />
