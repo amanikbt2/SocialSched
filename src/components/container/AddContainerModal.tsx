@@ -1678,7 +1678,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                           </TouchableOpacity>
                         </View>
                         <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
-                          📂 {selectedCol.mediaUris.length} items loaded. Manual media configuration is hidden to save space.
+                          📂 {selectedCol.mediaUris ? selectedCol.mediaUris.length : 0} items loaded. Manual media configuration is hidden to save space.
                         </Text>
                         
                         {(selectedCol.startMediaUri || selectedCol.endMediaUri) && (
