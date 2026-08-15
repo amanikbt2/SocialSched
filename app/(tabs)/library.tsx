@@ -69,19 +69,64 @@ export default function LibraryScreen() {
   };
 
   const handleCreateCollectionSubmit = async () => {
-    if (!colName.trim()) {
-      Alert.alert('Validation Error', 'Please enter a collection name.');
-      return;
-    }
-
-    if (colType === 'media') {
-      if (colMediaPool.length === 0) {
-        Alert.alert('Validation Error', 'Please add at least one media item to the collection.');
+    console.log('Starting handleCreateCollectionSubmit... Name:', colName, 'Type:', colType);
+    try {
+      if (!colName || !colName.trim()) {
+        Alert.alert('Validation Error', 'Please enter a collection name.');
         return;
       }
-      await createCollection(colName.trim(), 'media', colMediaPool, colStartMedia, colEndMedia, undefined);
-    } else {
-      const lines = colTextRaw
+
+      if (colType === 'media') {
+        if (colMediaPool.length === 0) {
+          Alert.alert('Validation Error', 'Please add at least one media item to the collection.');
+          return;
+        }
+        console.log('Creating media collection...');
+        await createCollection(colName.trim(), 'media', colMediaPool, colStartMedia, colEndMedia, []);
+      } else {
+        if (!colTextRaw) {
+          Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
+          return;
+        }
+        const lines = colTextRaw
+          .split('<==>')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+
+        if (lines.length === 0) {
+          Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
+          return;
+        }
+        console.log('Creating text collection with lines:', lines);
+        await createCollection(colName.trim(), 'text', [], undefined, undefined, lines);
+      }
+
+      console.log('Collection created successfully! Resetting form...');
+      const createdName = colName.trim();
+      // Reset Form
+      setColName('');
+      setColType('media');
+      setColTextRaw('');
+      setColMediaPool([]);
+      setColStartMedia(undefined);
+      setColEndMedia(undefined);
+      setCreateModalVisible(false);
+      Alert.alert('Success', `Collection "${createdName}" created successfully!`);
+    } catch (error: any) {
+      console.error('Error in handleCreateCollectionSubmit:', error);
+      Alert.alert('Error', `Failed to create collection: ${error.message || error}`);
+    }
+  };
+
+  const handleUpdateCollectionSubmit = async () => {
+    try {
+      if (!selectedViewCollection) return;
+      if (!editColName.trim()) {
+        Alert.alert('Validation Error', 'Please enter a collection name.');
+        return;
+      }
+
+      const lines = editColTextRaw
         .split('<==>')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
@@ -90,47 +135,21 @@ export default function LibraryScreen() {
         Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
         return;
       }
-      await createCollection(colName.trim(), 'text', undefined, undefined, undefined, lines);
+
+      const updated: MediaCollection = {
+        ...selectedViewCollection,
+        name: editColName.trim(),
+        descriptions: lines,
+      };
+
+      await updateCollection(updated);
+      setSelectedViewCollection(updated);
+      setIsEditingCol(false);
+      Alert.alert('Success', 'Collection updated successfully!');
+    } catch (error: any) {
+      console.error('Error updating collection:', error);
+      Alert.alert('Error', `Failed to update collection: ${error.message || error}`);
     }
-
-    // Reset Form
-    setColName('');
-    setColType('media');
-    setColTextRaw('');
-    setColMediaPool([]);
-    setColStartMedia(undefined);
-    setColEndMedia(undefined);
-    setCreateModalVisible(false);
-    Alert.alert('Success', `Collection "${colName}" created successfully!`);
-  };
-
-  const handleUpdateCollectionSubmit = async () => {
-    if (!selectedViewCollection) return;
-    if (!editColName.trim()) {
-      Alert.alert('Validation Error', 'Please enter a collection name.');
-      return;
-    }
-
-    const lines = editColTextRaw
-      .split('<==>')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    if (lines.length === 0) {
-      Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
-      return;
-    }
-
-    const updated: MediaCollection = {
-      ...selectedViewCollection,
-      name: editColName.trim(),
-      descriptions: lines,
-    };
-
-    await updateCollection(updated);
-    setSelectedViewCollection(updated);
-    setIsEditingCol(false);
-    Alert.alert('Success', 'Collection updated successfully!');
   };
 
   const handlePickMedia = async () => {
