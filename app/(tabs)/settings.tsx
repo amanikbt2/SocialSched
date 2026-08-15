@@ -271,6 +271,29 @@ export default function SettingsScreen() {
             />
           </View>
         </Card>
+
+        {/* Developer / Electron Debugging Section */}
+        {typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron && (
+          <Card style={styles.sectionCard}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Developer Tools</Text>
+            <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>Access Chrome developer logs and inspectors</Text>
+
+            <View style={{ marginTop: 4 }}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (typeof window !== 'undefined' && (window as any).electronAPI?.toggleDevTools) {
+                    (window as any).electronAPI.toggleDevTools();
+                  }
+                }}
+                style={[styles.backupBtn, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}
+              >
+                <Monitor size={16} color={colors.textPrimary} />
+                <Text style={[styles.backupText, { color: colors.textPrimary }]}>Toggle Developer Tools (Debug)</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
       </ScrollView>
     </View>
   );

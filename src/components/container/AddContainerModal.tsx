@@ -40,6 +40,7 @@ import {
   Plus,
   Trash2,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   ChevronRight,
@@ -247,6 +248,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedTextCollectionId, setSelectedTextCollectionId] = useState<string | null>(null);
   const [isTextColDropdownExpanded, setIsTextColDropdownExpanded] = useState<boolean>(false);
+  const [isMediaColDropdownExpanded, setIsMediaColDropdownExpanded] = useState<boolean>(false);
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
   const [mediaPoolExpanded, setMediaPoolExpanded] = useState<boolean>(true);
@@ -1647,112 +1649,160 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {/* Tab 2: MEDIA POOL */}
             {loopTab === 'media' && (
               <View style={styles.tabBodyBox}>
-                {/* Pre-fill from Media Collection */}
+                {/* Media Collection Collapsible Selector */}
                 <View style={{ marginBottom: 12 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 4 }]}>
                     LOAD FROM MEDIA COLLECTION
                   </Text>
-                  
-                  {selectedCollectionId ? (() => {
-                    const selectedCol = collections.find(c => c.id === selectedCollectionId);
-                    if (!selectedCol) return null;
-                    return (
-                      <View style={{ backgroundColor: colors.primaryContainer + '15', borderColor: colors.primary + '40', borderWidth: 1, borderRadius: 12, padding: 14 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <CheckCircle2 size={16} color={colors.primary} />
-                            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
-                              {selectedCol.name}
-                            </Text>
-                          </View>
+
+                  {collections.filter(c => c.type === 'media').length === 0 ? (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
+                      No media collections created yet. Go to the "Media" tab to group your photos/videos into reusable collections.
+                    </Text>
+                  ) : (
+                    <>
+                      {/* Trigger Button */}
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => setIsMediaColDropdownExpanded(!isMediaColDropdownExpanded)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingHorizontal: 14,
+                          paddingVertical: 12,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                          backgroundColor: colors.surface,
+                          marginBottom: isMediaColDropdownExpanded ? 8 : 12,
+                          marginTop: 4
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Layers size={16} color={selectedCollectionId ? colors.primary : colors.textSecondary} />
+                          <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: selectedCollectionId ? '700' : '400' }}>
+                            {selectedCollectionId 
+                              ? collections.find(c => c.id === selectedCollectionId)?.name || 'Selected Collection' 
+                              : 'None (Manual Entry)'}
+                          </Text>
+                        </View>
+                        {isMediaColDropdownExpanded ? <ChevronUp size={16} color={colors.textSecondary} /> : <ChevronDown size={16} color={colors.textSecondary} />}
+                      </TouchableOpacity>
+
+                      {/* Dropdown Options List */}
+                      {isMediaColDropdownExpanded && (
+                        <View style={{
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          borderWidth: 1,
+                          borderRadius: 12,
+                          marginBottom: 16,
+                          overflow: 'hidden',
+                          elevation: 2,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 2
+                        }}>
+                          {/* "None" option */}
                           <TouchableOpacity
+                            activeOpacity={0.8}
                             onPress={() => {
                               setSelectedCollectionId(null);
                               setLoopMediaPool([]);
                               setStartMediaUri(null);
                               setEndMediaUri(null);
-                            }}
-                            style={{ backgroundColor: colors.surfaceVariant, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 }}
-                          >
-                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSecondary }}>Clear / Select None</Text>
-                          </TouchableOpacity>
-                        </View>
-                        <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
-                          📂 {selectedCol.mediaUris ? selectedCol.mediaUris.length : 0} items loaded. Manual media configuration is hidden to save space.
-                        </Text>
-                        
-                        {(selectedCol.startMediaUri || selectedCol.endMediaUri) && (
-                          <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
-                            {selectedCol.startMediaUri && (
-                              <View style={{ alignItems: 'flex-start', gap: 2 }}>
-                                <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' }}>Cover</Text>
-                                <Image source={{ uri: selectedCol.startMediaUri }} style={{ width: 44, height: 44, borderRadius: 6 }} />
-                              </View>
-                            )}
-                            {selectedCol.endMediaUri && (
-                              <View style={{ alignItems: 'flex-start', gap: 2 }}>
-                                <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' }}>Outro</Text>
-                                <Image source={{ uri: selectedCol.endMediaUri }} style={{ width: 44, height: 44, borderRadius: 6 }} />
-                              </View>
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })() : collections.filter(c => c.type === 'media').length === 0 ? (
-                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
-                      No media collections created yet. Go to the "Media" tab to group your photos/videos into reusable collections.
-                    </Text>
-                  ) : (
-                    <View>
-                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>
-                        Quickly populate this pool using a pre-saved media collection:
-                      </Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                        {collections.filter(c => c.type === 'media').map((col) => (
-                          <TouchableOpacity
-                            key={col.id}
-                            activeOpacity={0.8}
-                            onPress={() => {
-                              Alert.alert(
-                                'Load Collection',
-                                `Would you like to load "${col.name}" with ${col.mediaUris ? col.mediaUris.length : 0} items?`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  {
-                                    text: 'Load',
-                                    onPress: () => {
-                                      setLoopMediaPool(col.mediaUris || []);
-                                      setStartMediaUri(col.startMediaUri || null);
-                                      setEndMediaUri(col.endMediaUri || null);
-                                      setSelectedCollectionId(col.id);
-                                    }
-                                  }
-                                ]
-                              );
+                              setIsMediaColDropdownExpanded(false);
                             }}
                             style={{
                               flexDirection: 'row',
                               alignItems: 'center',
-                              paddingHorizontal: 12,
-                              paddingVertical: 8,
-                              borderRadius: 14,
-                              backgroundColor: colors.primaryContainer,
-                              borderColor: colors.primary,
-                              borderWidth: 1,
-                              gap: 6
+                              padding: 12,
+                              borderBottomWidth: 1,
+                              borderBottomColor: colors.border,
+                              backgroundColor: !selectedCollectionId ? colors.primaryContainer + '20' : 'transparent',
+                              gap: 8
                             }}
                           >
-                            <Layers size={13} color={colors.primary} />
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-                              {col.name} ({col.mediaUris ? col.mediaUris.length : 0})
+                            <X size={14} color={colors.textSecondary} />
+                            <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: !selectedCollectionId ? '700' : '400' }}>
+                              None (Manual Entry)
                             </Text>
                           </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
+
+                          {/* Media collections options */}
+                          {collections.filter(c => c.type === 'media').map((col) => {
+                            const isSelected = selectedCollectionId === col.id;
+                            return (
+                              <TouchableOpacity
+                                key={col.id}
+                                activeOpacity={0.8}
+                                onPress={() => {
+                                  setSelectedCollectionId(col.id);
+                                  setLoopMediaPool(col.mediaUris || []);
+                                  setStartMediaUri(col.startMediaUri || null);
+                                  setEndMediaUri(col.endMediaUri || null);
+                                  setIsMediaColDropdownExpanded(false);
+                                }}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  padding: 12,
+                                  borderBottomWidth: 1,
+                                  borderBottomColor: colors.border,
+                                  backgroundColor: isSelected ? colors.primaryContainer + '20' : 'transparent',
+                                  gap: 8
+                                }}
+                              >
+                                <Layers size={14} color={isSelected ? colors.primary : colors.textSecondary} />
+                                <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: isSelected ? '700' : '400', flex: 1 }}>
+                                  {col.name} ({col.mediaUris ? col.mediaUris.length : 0})
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </>
                   )}
                 </View>
+
+                {/* Selected Collection Info Panel */}
+                {selectedCollectionId && (() => {
+                  const selectedCol = collections.find(c => c.id === selectedCollectionId);
+                  if (!selectedCol) return null;
+                  return (
+                    <View style={{ backgroundColor: colors.primaryContainer + '15', borderColor: colors.primary + '40', borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <CheckCircle2 size={16} color={colors.primary} />
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
+                          {selectedCol.name}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
+                        📂 {selectedCol.mediaUris ? selectedCol.mediaUris.length : 0} items loaded. Manual media configuration is hidden to save space.
+                      </Text>
+                      
+                      {(selectedCol.startMediaUri || selectedCol.endMediaUri) && (
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
+                          {selectedCol.startMediaUri && (
+                            <View style={{ alignItems: 'flex-start', gap: 2 }}>
+                              <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' }}>Cover</Text>
+                              <Image source={{ uri: selectedCol.startMediaUri }} style={{ width: 44, height: 44, borderRadius: 6 }} />
+                            </View>
+                          )}
+                          {selectedCol.endMediaUri && (
+                            <View style={{ alignItems: 'flex-start', gap: 2 }}>
+                              <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' }}>Outro</Text>
+                              <Image source={{ uri: selectedCol.endMediaUri }} style={{ width: 44, height: 44, borderRadius: 6 }} />
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
 
                 {!selectedCollectionId && (
                   <>

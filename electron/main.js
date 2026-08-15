@@ -20,12 +20,18 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-const MEDIA_DIR = path.join(os.homedir(), '.smartflow_media');
+const SMARTFLOW_ROOT = path.join(os.homedir(), '.smartflow');
+const MEDIA_DIR = path.join(SMARTFLOW_ROOT, 'media');
+const TEMP_DIR = path.join(SMARTFLOW_ROOT, 'temp');
+const EXPORTS_DIR = path.join(SMARTFLOW_ROOT, 'exports');
 
 // Ensure directory exists
 function ensureDirExists() {
-  if (!fs.existsSync(MEDIA_DIR)) {
-    fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  const dirs = [SMARTFLOW_ROOT, MEDIA_DIR, TEMP_DIR, EXPORTS_DIR];
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
   }
 }
 
@@ -43,8 +49,14 @@ function createWindow() {
 
   const isDev = process.env.NODE_ENV === 'development';
 
-  // Always open DevTools for debugging (remove once stable)
-  win.webContents.openDevTools({ mode: 'detach' });
+  // Listen to IPC toggle-devtools from preload bridge
+  ipcMain.on('toggle-devtools', () => {
+    if (win.webContents.isDevToolsOpened()) {
+      win.webContents.closeDevTools();
+    } else {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
 
   // Log renderer console messages to main process stdout
   win.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -142,6 +154,57 @@ ipcMain.handle('clear-storage', async () => {
     return true;
   } catch (error) {
     console.warn('Failed to clear storage:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('get-folders-breakdown', async () => {
+  try {
+    ensureDirExists();
+    const folders = [
+      { name: 'Media Library', path: MEDIA_DIR },
+      { name: 'Temporary Cache', path: TEMP_DIR },
+      { name: 'Exported Backups', path: EXPORTS_DIR },
+    ];
+    const breakdown = [];
+    for (const folder of folders) {
+      if (!fs.existsSync(folder.path)) {
+        breakdown.push({ name: folder.name, path: folder.path, sizeBytes: 0, fileCount: 0 });
+        continue;
+      }
+      const files = fs.readdirSync(folder.path);
+      let sizeBytes = 0;
+      let fileCount = 0;
+      for (const file of files) {
+        const filePath = path.join(folder.path, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isFile()) {
+          sizeBytes += stat.size;
+          fileCount += 1;
+        }
+      }
+      breakdown.push({ name: folder.name, path: folder.path, sizeBytes, fileCount });
+    }
+    return breakdown;
+  } catch (error) {
+    console.warn('Failed to get folders breakdown:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('clear-specific-folder', async (event, folderPath) => {
+  try {
+    if (!folderPath || !folderPath.includes('.smartflow')) return false;
+    if (fs.existsSync(folderPath)) {
+      const files = fs.readdirSync(folderPath);
+      for (const file of files) {
+        const filePath = path.join(folderPath, file);
+        fs.unlinkSync(filePath);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn(`Failed to clear folder ${folderPath}:`, error);
     return false;
   }
 });

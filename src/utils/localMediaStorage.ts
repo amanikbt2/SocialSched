@@ -1,7 +1,10 @@
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
-const HIDDEN_MEDIA_DIR = `${FileSystem.documentDirectory}smartflow_media/`;
+const SMARTFLOW_ROOT = `${FileSystem.documentDirectory}smartflow/`;
+const HIDDEN_MEDIA_DIR = `${SMARTFLOW_ROOT}media/`;
+const TEMP_DIR = `${SMARTFLOW_ROOT}temp/`;
+const EXPORTS_DIR = `${SMARTFLOW_ROOT}exports/`;
 
 // Simple check to detect if we are running in Electron desktop shell
 const getElectronAPI = () => {
@@ -17,9 +20,12 @@ const getElectronAPI = () => {
 async function ensureHiddenDirExists(): Promise<string> {
   if (Platform.OS === 'web' || !FileSystem.documentDirectory) return '';
   try {
-    const dirInfo = await FileSystem.getInfoAsync(HIDDEN_MEDIA_DIR);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(HIDDEN_MEDIA_DIR, { intermediates: true });
+    const dirs = [SMARTFLOW_ROOT, HIDDEN_MEDIA_DIR, TEMP_DIR, EXPORTS_DIR];
+    for (const dir of dirs) {
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
     }
     return HIDDEN_MEDIA_DIR;
   } catch (err) {
@@ -51,7 +57,7 @@ export async function saveMediaToHiddenFolder(sourceUri: string): Promise<string
     if (!dir) return sourceUri;
 
     // Check if sourceUri is already inside our hidden folder
-    if (sourceUri.includes('smartflow_media')) {
+    if (sourceUri.includes('smartflow/media') || sourceUri.includes('smartflow_media')) {
       return sourceUri;
     }
 
@@ -227,6 +233,93 @@ export async function clearHiddenMediaStorage(): Promise<boolean> {
     return true;
   } catch (error) {
     console.warn('Error clearing hidden media storage:', error);
+    return false;
+  }
+}
+
+export interface FolderInfo {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  fileCount: number;
+}
+
+/**
+ * Retrieves information about folders created under smartflow/
+ */
+export async function getSmartflowFoldersBreakdown(): Promise<FolderInfo[]> {
+  if (Platform.OS === 'web') {
+    const electronAPI = getElectronAPI();
+    if (electronAPI && electronAPI.getFoldersBreakdown) {
+      return await electronAPI.getFoldersBreakdown();
+    }
+    return [];
+  }
+
+  if (!FileSystem.documentDirectory) return [];
+
+  const folders = [
+    { name: 'Media Library', path: HIDDEN_MEDIA_DIR },
+    { name: 'Temporary Cache', path: TEMP_DIR },
+    { name: 'Exported Backups', path: EXPORTS_DIR },
+  ];
+
+  const breakdown: FolderInfo[] = [];
+
+  for (const folder of folders) {
+    try {
+      const dirInfo = await FileSystem.getInfoAsync(folder.path);
+      if (!dirInfo.exists) {
+        breakdown.push({ name: folder.name, path: folder.path, sizeBytes: 0, fileCount: 0 });
+        continue;
+      }
+      const files = await FileSystem.readDirectoryAsync(folder.path);
+      let sizeBytes = 0;
+      for (const filename of files) {
+        const fileUri = folder.path + filename;
+        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+        if (fileInfo.exists && !fileInfo.isDirectory) {
+          sizeBytes += fileInfo.size;
+        }
+      }
+      breakdown.push({
+        name: folder.name,
+        path: folder.path,
+        sizeBytes,
+        fileCount: files.length
+      });
+    } catch (e) {
+      console.warn(`Failed to read folder breakdown for ${folder.name}:`, e);
+      breakdown.push({ name: folder.name, path: folder.path, sizeBytes: 0, fileCount: 0 });
+    }
+  }
+
+  return breakdown;
+}
+
+/**
+ * Wipes the contents of a specific folder
+ */
+export async function clearSpecificFolder(folderPath: string): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    const electronAPI = getElectronAPI();
+    if (electronAPI && electronAPI.clearSpecificFolder) {
+      return await electronAPI.clearSpecificFolder(folderPath);
+    }
+    return true;
+  }
+
+  if (!FileSystem.documentDirectory || !folderPath) return true;
+
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(folderPath);
+    if (dirInfo.exists) {
+      await FileSystem.deleteAsync(folderPath, { idempotent: true });
+    }
+    await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
+    return true;
+  } catch (error) {
+    console.warn(`Error clearing folder ${folderPath}:`, error);
     return false;
   }
 }

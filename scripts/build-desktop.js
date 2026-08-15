@@ -14,9 +14,16 @@ function runCmd(cmd) {
 console.log('Building web bundle...');
 runCmd('npm run build:web');
 
-// 1.5 With custom app://localhost/ protocol, absolute paths in dist/index.html
-// resolve correctly — no path rewriting needed.
-console.log('Skipping path rewrite (custom protocol handles absolute paths).');
+// 1.5 Fix absolute asset paths in index.html for Electron (convert "/_expo" to "./_expo" etc.)
+const indexPath = path.join(__dirname, '../dist/index.html');
+if (fs.existsSync(indexPath)) {
+  console.log('Fixing absolute asset paths in dist/index.html for Electron compatibility...');
+  let html = fs.readFileSync(indexPath, 'utf8');
+  html = html.replace(/src="\//g, 'src="./');
+  html = html.replace(/href="\//g, 'href="./');
+  fs.writeFileSync(indexPath, html, 'utf8');
+  console.log('Asset paths in dist/index.html successfully converted to relative paths!');
+}
 
 // 2. Read package.json
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));

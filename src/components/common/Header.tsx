@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Image, ScrollView, TextInput, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Image, ScrollView, TextInput, Alert, Modal, ActivityIndicator, Platform } from 'react-native';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCampaignStore } from '../../stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
-import { AlertCircle, Menu, Moon, Database, Bell, Facebook, Instagram, Twitter, Video, Plus, Link2, Trash2, CheckCircle2, Zap } from 'lucide-react-native';
+import { AlertCircle, Menu, Moon, Database, Bell, Facebook, Instagram, Twitter, Video, Plus, Link2, Trash2, CheckCircle2, Zap, HardDrive, Folder, ChevronRight, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AnimatedSheet } from './AnimatedSheet';
 import { SocialPlatform } from '../../db/types';
 import { platformColors } from '../../theme/colors';
 
 import { validateFacebookToken } from '../../services/facebookPublisher';
+import { getHiddenMediaStorageInfo, clearHiddenMediaStorage, getSmartflowFoldersBreakdown, clearSpecificFolder } from '../../utils/localMediaStorage';
 
 interface HeaderProps {
   title?: string;
@@ -33,6 +34,100 @@ export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, s
 
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [mediaStorage, setMediaStorage] = useState<{ sizeBytes: number; fileCount: number }>({ sizeBytes: 0, fileCount: 0 });
+  const [storageFolderPath, setStorageFolderPath] = useState('smartflow_media/');
+
+  // Storage Breakdown Modal state
+  const [storageModalVisible, setStorageModalVisible] = useState(false);
+  const [foldersBreakdown, setFoldersBreakdown] = useState<any[]>([]);
+  const [isLoadingBreakdown, setIsLoadingBreakdown] = useState(false);
+
+  const loadMediaStorageInfo = async () => {
+    const info = await getHiddenMediaStorageInfo();
+    setMediaStorage(info);
+  };
+
+  const loadFoldersBreakdown = async () => {
+    setIsLoadingBreakdown(true);
+    try {
+      const breakdown = await getSmartflowFoldersBreakdown();
+      setFoldersBreakdown(breakdown);
+    } catch (e) {
+      console.warn('Failed to load folders breakdown:', e);
+    } finally {
+      setIsLoadingBreakdown(false);
+    }
+  };
+
+  const handleOpenStorageModal = () => {
+    setStorageModalVisible(true);
+    loadFoldersBreakdown();
+  };
+
+  const handleWipeSpecificFolder = (folder: any) => {
+    Alert.alert(
+      'Wipe Folder?',
+      `Are you sure you want to completely delete all files in the "${folder.name}" folder? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Wipe',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await clearSpecificFolder(folder.path);
+            if (success) {
+              await loadFoldersBreakdown();
+              await loadMediaStorageInfo(); // refresh settings drawer summary as well
+              Alert.alert('Success', `Cleared contents of "${folder.name}".`);
+            } else {
+              Alert.alert('Error', `Failed to clear folder "${folder.name}".`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  useEffect(() => {
+    if (settingsVisible) {
+      loadMediaStorageInfo();
+      const hasElectron = typeof window !== 'undefined' && (window as any).electronAPI;
+      if (hasElectron) {
+        setStorageFolderPath('~/.smartflow_media/');
+      }
+    }
+  }, [settingsVisible]);
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleClearMediaFolder = () => {
+    Alert.alert(
+      'Clear Media Storage?',
+      'This will delete all copied offline photos/videos from the app directory. Scheduled posts using these local files may fail to upload.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Storage',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await clearHiddenMediaStorage();
+            if (success) {
+              await loadMediaStorageInfo();
+              Alert.alert('Success', 'Local media folder cleared successfully!');
+            } else {
+              Alert.alert('Error', 'Failed to clear local media folder.');
+            }
+          }
+        }
+      ]
+    );
+  };
 
   // Linking Modal State
   const [linkingPlatform, setLinkingPlatform] = useState<SocialPlatform | null>(null);
@@ -122,6 +217,40 @@ export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, s
     tiktok: { icon: Video, color: '#000000', label: 'TikTok' },
     x: { icon: Twitter, color: platformColors.x, label: 'X (Twitter)' },
   };
+
+  const [pageStatuses, setPageStatuses] = React.useState<Record<string, string>>({});
+  const [checking, setChecking] = React.useState(false);
+
+  // When settings drawer opens, trigger status checks for saved Facebook pages
+  React.useEffect(() => {
+    if (!settingsVisible) return;
+    if (savedFacebookPages.length === 0) return;
+    
+    setChecking(true);
+    const fetchStatus = async (page: any) => {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v19.0/${page.id}?fields=id&access_token=${encodeURIComponent(page.accessToken)}`
+        );
+        return res.ok ? 'Active' : 'Expired';
+      } catch (_) {
+        return 'Expired';
+      }
+    };
+
+    Promise.all(
+      savedFacebookPages.map((p) =>
+        fetchStatus(p).then((status) => ({ id: p.id, status }))
+      )
+    ).then((results) => {
+      const newStatuses: Record<string, string> = {};
+      results.forEach((r) => {
+        newStatuses[r.id] = r.status;
+      });
+      setPageStatuses((prev) => ({ ...prev, ...newStatuses }));
+      setChecking(false);
+    });
+  }, [settingsVisible, savedFacebookPages]);
 
   return (
     <>
@@ -228,7 +357,55 @@ export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, s
             />
           </View>
 
-          {/* Section 2: Linked Social Accounts */}
+          {/* Section 2: Storage */}
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 18 }]}>
+            STORAGE
+          </Text>
+
+          {/* SQLite Database */}
+          <View
+            style={[
+              styles.singleLineRow,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.singleLineLeft}>
+              <Database size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.singleLineTitle, { color: colors.textPrimary }]}>
+                  Local Database
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                  {posts.length} Posts • SQLite
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Offline Media Folder — clickable to open breakdown */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleOpenStorageModal}
+            style={[
+              styles.singleLineRow,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+            ]}
+          >
+            <View style={[styles.singleLineLeft, { flex: 1 }]}>
+              <Folder size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.singleLineTitle, { color: colors.textPrimary }]}>
+                  App Storage Folders
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                  {mediaStorage.fileCount} files • {formatBytes(mediaStorage.sizeBytes)} • Tap to manage
+                </Text>
+              </View>
+            </View>
+            <ChevronRight size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Section 3: Linked Social Accounts */}
           <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 18 }]}>
             LINKED SOCIAL ACCOUNTS
           </Text>
@@ -392,6 +569,12 @@ export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, s
                           <Text style={[styles.pageNameText, { color: colors.textPrimary }]}>
                             {page.name}
                           </Text>
+                          {/* Status badge */}
+                          <View style={{ marginLeft: 8 }}>
+                            <Text style={{ color: pageStatuses[page.id] === 'Active' ? colors.success : colors.danger, fontWeight: '600' }}>
+                              {pageStatuses[page.id] || (checking ? 'Checking...' : '…')}
+                            </Text>
+                          </View>
                           {isLastUsed && (
                             <View style={[styles.lastUsedChip, { backgroundColor: colors.primaryContainer }]}>
                               <Text style={[styles.lastUsedChipText, { color: colors.primary }]}>
@@ -443,6 +626,84 @@ export const Header: React.FC<HeaderProps> = ({ title = 'Smartflow', subtitle, s
           </ScrollView>
         </AnimatedSheet>
       )}
+
+      {/* Storage Breakdown Modal */}
+      <Modal
+        visible={storageModalVisible}
+        animationType="slide"
+        onRequestClose={() => setStorageModalVisible(false)}
+      >
+        <View style={[styles.modalWrapper, { backgroundColor: colors.background, paddingTop: Platform.OS === 'ios' ? 50 : 20 }]}>
+          {/* Header */}
+          <View style={[styles.modalHeaderRow, { borderBottomColor: colors.border, paddingBottom: 16 }]}>
+            <View>
+              <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Offline Storage</Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>Manage directories created by the app</Text>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setStorageModalVisible(false)}
+              style={[styles.closeBtn, { backgroundColor: colors.surfaceVariant }]}
+            >
+              <X size={16} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Folder List */}
+          <ScrollView contentContainerStyle={{ padding: 16 }}>
+            {isLoadingBreakdown ? (
+              <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+            ) : foldersBreakdown.length === 0 ? (
+              <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 40 }}>
+                No storage folders found.
+              </Text>
+            ) : (
+              foldersBreakdown.map((folder) => {
+                const isMedia = folder.name === 'Media Library';
+                return (
+                  <View
+                    key={folder.path}
+                    style={[
+                      styles.folderItemCard,
+                      { backgroundColor: colors.surfaceVariant, borderColor: colors.border }
+                    ]}
+                  >
+                    <View style={{ flex: 1, gap: 4, paddingRight: 8 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
+                        {folder.name}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                        Path: {folder.path}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textPrimary, fontWeight: '700', marginTop: 4 }}>
+                        {folder.fileCount} files • {formatBytes(folder.sizeBytes)} used
+                      </Text>
+                      {isMedia && folder.fileCount > 0 && (
+                        <Text style={{ fontSize: 10, color: colors.danger, marginTop: 2 }}>
+                          ⚠️ Clearing this will disconnect offline collection images.
+                        </Text>
+                      )}
+                    </View>
+
+                    {folder.fileCount > 0 && (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => handleWipeSpecificFolder(folder)}
+                        style={[
+                          styles.wipeBtn,
+                          { backgroundColor: '#EF444415', borderColor: '#EF4444', borderWidth: 1 }
+                        ]}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#EF4444' }}>Wipe</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </>
   );
 };
@@ -705,5 +966,42 @@ const styles = StyleSheet.create({
   },
   trashSavedBtn: {
     padding: 6,
+  },
+  modalWrapper: {
+    flex: 1,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  modalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  folderItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  wipeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
