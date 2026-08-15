@@ -17,6 +17,7 @@ export default function SettingsScreen() {
 
   const [notifications, setNotifications] = useState(true);
   const [mediaStorage, setMediaStorage] = useState<{ sizeBytes: number; fileCount: number }>({ sizeBytes: 0, fileCount: 0 });
+  const [folderPath, setFolderPath] = useState('smartflow_media/');
 
   const loadMediaStorageInfo = async () => {
     const info = await getHiddenMediaStorageInfo();
@@ -25,6 +26,10 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     loadMediaStorageInfo();
+    const hasElectron = typeof window !== 'undefined' && (window as any).electronAPI;
+    if (hasElectron) {
+      setFolderPath('~/.smartflow_media/');
+    }
   }, []);
 
   const formatBytes = (bytes: number) => {
@@ -210,7 +215,7 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>Offline Media Directory</Text>
               <Text style={[styles.optionDesc, { color: colors.textSecondary }]}>
-                Folder: .socialsched_media/ {'\n'}
+                Folder: {folderPath} {'\n'}
                 {mediaStorage.fileCount} files • {formatBytes(mediaStorage.sizeBytes)} used
               </Text>
             </View>

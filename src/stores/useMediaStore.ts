@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { MediaItem } from '../db/types';
 import { getDatabase } from '../db/database';
+import { saveMediaToHiddenFolder } from '../utils/localMediaStorage';
 
 interface MediaState {
   items: MediaItem[];
@@ -52,8 +53,10 @@ export const useMediaStore = create<MediaState>((set, get) => ({
 
   addMediaItem: async (itemData) => {
     const db = await getDatabase();
+    const localUri = await saveMediaToHiddenFolder(itemData.uri);
     const newItem: MediaItem = {
       ...itemData,
+      uri: localUri,
       id: `med-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       createdAt: new Date().toISOString(),
     };

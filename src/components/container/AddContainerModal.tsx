@@ -63,6 +63,7 @@ import {
   Repeat,
   MessageSquare,
   RotateCcw,
+  FileText,
 } from 'lucide-react-native';
 import { platformColors } from '../../theme/colors';
 import { TopReloadProgressBar } from '../common/TopReloadProgressBar';
@@ -243,6 +244,8 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [loopMediaPool, setLoopMediaPool] = useState<string[]>(
     existingContainer?.loopMediaPool || []
   );
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [selectedTextCollectionId, setSelectedTextCollectionId] = useState<string | null>(null);
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
   const [mediaPoolExpanded, setMediaPoolExpanded] = useState<boolean>(true);
@@ -1407,56 +1410,144 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {/* Tab 1: DESCRIPTIONS */}
             {loopTab === 'descriptions' && (
               <View style={styles.tabBodyBox}>
-                <View style={styles.inputGroup}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
-                      {isSmartSplitEnabled ? "Bulk Paste & Smart Split (<==>)" : "Add Descriptions"}
+                {/* Pre-fill from Text Collection */}
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                    LOAD FROM TEXT COLLECTION
+                  </Text>
+                  
+                  {selectedTextCollectionId ? (() => {
+                    const selectedCol = collections.find(c => c.id === selectedTextCollectionId);
+                    if (!selectedCol) return null;
+                    return (
+                      <View style={{ backgroundColor: colors.primaryContainer + '15', borderColor: colors.primary + '40', borderWidth: 1, borderRadius: 12, padding: 14 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <CheckCircle2 size={16} color={colors.primary} />
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
+                              {selectedCol.name}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedTextCollectionId(null);
+                              setLoopDescriptions([]);
+                            }}
+                            style={{ backgroundColor: colors.surfaceVariant, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSecondary }}>Clear / Select None</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
+                          📝 {selectedCol.descriptions?.length || 0} description items loaded. Manual text configuration is hidden to save space.
+                        </Text>
+                      </View>
+                    );
+                  })() : collections.filter(c => c.type === 'text').length === 0 ? (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
+                      No text collections created yet. Go to the "Media" tab to group your captions/descriptions into reusable collections.
                     </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
-                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>Smart Split</Text>
-                      <Switch
-                        value={isSmartSplitEnabled}
-                        onValueChange={setIsSmartSplitEnabled}
-                        trackColor={{ false: colors.border, true: colors.primary }}
-                        thumbColor="#FFFFFF"
-                        style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-                      />
+                  ) : (
+                    <View>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>
+                        Quickly populate descriptions using a pre-saved text collection:
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                        {collections.filter(c => c.type === 'text').map((col) => (
+                          <TouchableOpacity
+                            key={col.id}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              Alert.alert(
+                                'Load Text Collection',
+                                `Would you like to load "${col.name}" with ${col.descriptions?.length || 0} items?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Load',
+                                    onPress: () => {
+                                      setLoopDescriptions(col.descriptions || []);
+                                      setSelectedTextCollectionId(col.id);
+                                    }
+                                  }
+                                ]
+                              );
+                            }}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderRadius: 14,
+                              backgroundColor: colors.primaryContainer,
+                              borderColor: colors.primary,
+                              borderWidth: 1,
+                              gap: 6
+                            }}
+                          >
+                            <FileText size={13} color={colors.primary} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
+                              {col.name} ({col.descriptions?.length || 0})
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
-                  </View>
-                  <TextInput
-                    style={[
-                      styles.textAreaInput,
-                      { 
-                        backgroundColor: colors.surfaceVariant, 
-                        color: colors.textPrimary, 
-                        borderColor: colors.border,
-                        height: isSmartSplitEnabled ? 160 : 80 
-                      },
-                    ]}
-                    placeholder={
-                      isSmartSplitEnabled
-                        ? "Paste multiple paragraphs separated by '<==>' here...\n\nExample:\nFirst paragraph post...\n<==>\nSecond paragraph post...\n<==>\nThird paragraph post..."
-                        : "Type post caption or paste multiple lines (each line is a post)..."
-                    }
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    numberOfLines={isSmartSplitEnabled ? 8 : 3}
-                    value={newDescInput}
-                    onChangeText={setNewDescInput}
-                  />
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handleAddDescription}
-                    style={[styles.addDescBtn, { backgroundColor: colors.primary }]}
-                  >
-                    <Plus size={14} color="#FFFFFF" />
-                    <Text style={styles.addDescBtnText}>
-                      {isSmartSplitEnabled 
-                        ? `+ Parse & Add ${newDescInput.split('<==>').filter(x => x.trim()).length} Captions` 
-                        : '+ Add to Descriptions List'}
-                    </Text>
-                  </TouchableOpacity>
+                  )}
                 </View>
+
+                {!selectedTextCollectionId && (
+                  <View style={styles.inputGroup}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+                        {isSmartSplitEnabled ? "Bulk Paste & Smart Split (<==>)" : "Add Descriptions"}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>Smart Split</Text>
+                        <Switch
+                          value={isSmartSplitEnabled}
+                          onValueChange={setIsSmartSplitEnabled}
+                          trackColor={{ false: colors.border, true: colors.primary }}
+                          thumbColor="#FFFFFF"
+                          style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                        />
+                      </View>
+                    </View>
+                    <TextInput
+                      style={[
+                        styles.textAreaInput,
+                        { 
+                          backgroundColor: colors.surfaceVariant, 
+                          color: colors.textPrimary, 
+                          borderColor: colors.border,
+                          height: isSmartSplitEnabled ? 160 : 80 
+                        },
+                      ]}
+                      placeholder={
+                        isSmartSplitEnabled
+                          ? "Paste multiple paragraphs separated by '<==>' here...\n\nExample:\nFirst paragraph post...\n<==>\nSecond paragraph post...\n<==>\nThird paragraph post..."
+                          : "Type post caption or paste multiple lines (each line is a post)..."
+                      }
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      numberOfLines={isSmartSplitEnabled ? 8 : 3}
+                      value={newDescInput}
+                      onChangeText={setNewDescInput}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handleAddDescription}
+                      style={[styles.addDescBtn, { backgroundColor: colors.primary }]}
+                    >
+                      <Plus size={14} color="#FFFFFF" />
+                      <Text style={styles.addDescBtnText}>
+                        {isSmartSplitEnabled 
+                          ? `+ Parse & Add ${newDescInput.split('<==>').filter(x => x.trim()).length} Captions` 
+                          : '+ Add to Descriptions List'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 {/* Saved Descriptions */}
                 <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>
@@ -1489,162 +1580,275 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {/* Tab 2: MEDIA POOL */}
             {loopTab === 'media' && (
               <View style={styles.tabBodyBox}>
-                {/* Start & End Media Section */}
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 10 }]}>
-                    START & END MEDIA (Fixed Bookend Slides)
+                {/* Pre-fill from Media Collection */}
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                    LOAD FROM MEDIA COLLECTION
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 12, lineHeight: 16 }}>
-                    Optional: First and last image for every generated post (e.g. cover photo + follow CTA). Files are renamed locally so no duplicates are created.
-                  </Text>
-
-                  {/* Start Media */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={handlePickStartMedia}
-                      style={[
-                        styles.urlAddBtn,
-                        { backgroundColor: colors.primaryContainer, paddingHorizontal: 14, paddingVertical: 10, flex: 1 },
-                      ]}
-                    >
-                      <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
-                        {startMediaUri ? '\uD83D\uDD04 Change Start Media' : '\uD83D\uDCCC Pick Start Media (Intro/Cover)'}
-                      </Text>
-                    </TouchableOpacity>
-                    {!!startMediaUri && (
-                      <TouchableOpacity onPress={handleClearStartMedia} style={{ padding: 6, marginLeft: 8 }}>
-                        <X size={16} color={colors.danger} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  {startMediaUri ? (
-                    <View style={{ position: 'relative', width: 80, height: 80, marginBottom: 12 }}>
-                      <Image source={{ uri: startMediaUri }} style={{ width: 80, height: 80, borderRadius: 8 }} resizeMode="cover" />
-                      <View style={[
-                        styles.indexBadge,
-                        { backgroundColor: colors.primary, position: 'absolute', bottom: 4, left: 4, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
-                      ]}>
-                        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>START</Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 12 }}>{'No start media set - first pool image will be slide #1'}</Text>
-                  )}
-
-                  {/* End Media */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={handlePickEndMedia}
-                      style={[
-                        styles.urlAddBtn,
-                        { backgroundColor: colors.primaryContainer, paddingHorizontal: 14, paddingVertical: 10, flex: 1 },
-                      ]}
-                    >
-                      <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
-                        {endMediaUri ? '\uD83D\uDD04 Change End Media' : '\uD83C\uDFC1 Pick End Media (Outro/CTA)'}
-                      </Text>
-                    </TouchableOpacity>
-                    {!!endMediaUri && (
-                      <TouchableOpacity onPress={handleClearEndMedia} style={{ padding: 6, marginLeft: 8 }}>
-                        <X size={16} color={colors.danger} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  {endMediaUri ? (
-                    <View style={{ position: 'relative', width: 80, height: 80, marginBottom: 4 }}>
-                      <Image source={{ uri: endMediaUri }} style={{ width: 80, height: 80, borderRadius: 8 }} resizeMode="cover" />
-                      <View style={[
-                        styles.indexBadge,
-                        { backgroundColor: '#EF4444', position: 'absolute', bottom: 4, left: 4, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
-                      ]}>
-                        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>END</Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>{'No end media set - last pool image will be the final slide'}</Text>
-                  )}
-                </View>
-
-                {/* Bulk Pick Button */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={handleBulkPickMedia}
-                  style={[styles.bulkPickBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Upload size={16} color="#FFFFFF" />
-                  <Text style={styles.bulkPickBtnText}>Bulk Pick Photos/Videos (Unlimited 100+)</Text>
-                </TouchableOpacity>
-
-                {/* Paste URL row */}
-                <View style={styles.pasteUrlRow}>
-                  <TextInput
-                    style={[
-                      styles.textInput,
-                      { flex: 1, backgroundColor: colors.surfaceVariant, color: colors.textPrimary, borderColor: colors.border },
-                    ]}
-                    placeholder="Paste photo/video URL..."
-                    placeholderTextColor={colors.textMuted}
-                    value={pastedUrl}
-                    onChangeText={setPastedUrl}
-                  />
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handleAppendPastedUrl}
-                    style={[styles.urlAddBtn, { backgroundColor: colors.primaryContainer }]}
-                  >
-                    <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>+ Add URL</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Media Pool Grid Header (Collapsible) */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setMediaPoolExpanded(!mediaPoolExpanded)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginTop: 16,
-                    paddingVertical: 8,
-                  }}
-                >
-                  <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 0 }]}>
-                    MEDIA POOL ITEMS ({loopMediaPool.length})
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 11, color: colors.textMuted }}>
-                      {mediaPoolExpanded ? 'Collapse' : 'Expand'}
-                    </Text>
-                    {mediaPoolExpanded ? (
-                      <ChevronUp size={16} color={colors.textSecondary} />
-                    ) : (
-                      <ChevronDown size={16} color={colors.textSecondary} />
-                    )}
-                  </View>
-                </TouchableOpacity>
-
-                {mediaPoolExpanded && (
-                  loopMediaPool.length === 0 ? (
-                    <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
-                      No media items in pool yet. Tap "Bulk Pick Photos/Videos" to select photos from phone storage.
-                    </Text>
-                  ) : (
-                    <View style={styles.mediaPoolGrid}>
-                      {loopMediaPool.map((uri, idx) => (
-                        <View key={idx} style={styles.mediaGridCell}>
-                          <Image source={{ uri }} style={styles.mediaGridThumb} resizeMode="cover" />
+                  
+                  {selectedCollectionId ? (() => {
+                    const selectedCol = collections.find(c => c.id === selectedCollectionId);
+                    if (!selectedCol) return null;
+                    return (
+                      <View style={{ backgroundColor: colors.primaryContainer + '15', borderColor: colors.primary + '40', borderWidth: 1, borderRadius: 12, padding: 14 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <CheckCircle2 size={16} color={colors.primary} />
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
+                              {selectedCol.name}
+                            </Text>
+                          </View>
                           <TouchableOpacity
-                            onPress={() => handleRemoveMediaFromPool(idx)}
-                            style={styles.removeMediaBadge}
+                            onPress={() => {
+                              setSelectedCollectionId(null);
+                              setLoopMediaPool([]);
+                              setStartMediaUri(null);
+                              setEndMediaUri(null);
+                            }}
+                            style={{ backgroundColor: colors.surfaceVariant, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 }}
                           >
-                            <Trash2 size={12} color="#FFFFFF" />
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSecondary }}>Clear / Select None</Text>
                           </TouchableOpacity>
                         </View>
-                      ))}
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
+                          📂 {selectedCol.mediaUris.length} items loaded. Manual media configuration is hidden to save space.
+                        </Text>
+                        
+                        {(selectedCol.startMediaUri || selectedCol.endMediaUri) && (
+                          <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
+                            {selectedCol.startMediaUri && (
+                              <View style={{ alignItems: 'flex-start', gap: 2 }}>
+                                <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' }}>Cover</Text>
+                                <Image source={{ uri: selectedCol.startMediaUri }} style={{ width: 44, height: 44, borderRadius: 6 }} />
+                              </View>
+                            )}
+                            {selectedCol.endMediaUri && (
+                              <View style={{ alignItems: 'flex-start', gap: 2 }}>
+                                <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase' }}>Outro</Text>
+                                <Image source={{ uri: selectedCol.endMediaUri }} style={{ width: 44, height: 44, borderRadius: 6 }} />
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })() : collections.length === 0 ? (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
+                      No collections created yet. Go to the "Media" tab to group your photos/videos into reusable collections.
+                    </Text>
+                  ) : (
+                    <View>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>
+                        Quickly populate this pool using a pre-saved media collection:
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                        {collections.map((col) => (
+                          <TouchableOpacity
+                            key={col.id}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              Alert.alert(
+                                'Load Collection',
+                                `Would you like to load "${col.name}" with ${col.mediaUris.length} items?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Load',
+                                    onPress: () => {
+                                      setLoopMediaPool(col.mediaUris);
+                                      setStartMediaUri(col.startMediaUri || null);
+                                      setEndMediaUri(col.endMediaUri || null);
+                                      setSelectedCollectionId(col.id);
+                                    }
+                                  }
+                                ]
+                              );
+                            }}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderRadius: 14,
+                              backgroundColor: colors.primaryContainer,
+                              borderColor: colors.primary,
+                              borderWidth: 1,
+                              gap: 6
+                            }}
+                          >
+                            <Layers size={13} color={colors.primary} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
+                              {col.name} ({col.mediaUris.length})
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
-                  )
+                  )}
+                </View>
+
+                {!selectedCollectionId && (
+                  <>
+                    <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 16, marginTop: 8 }} />
+
+                    {/* Start & End Media Section */}
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 10 }]}>
+                        START & END MEDIA (Fixed Bookend Slides)
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 12, lineHeight: 16 }}>
+                        Optional: First and last image for every generated post (e.g. cover photo + follow CTA). Files are renamed locally so no duplicates are created.
+                      </Text>
+
+                      {/* Start Media */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={handlePickStartMedia}
+                          style={[
+                            styles.urlAddBtn,
+                            { backgroundColor: colors.primaryContainer, paddingHorizontal: 14, paddingVertical: 10, flex: 1 },
+                          ]}
+                        >
+                          <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
+                            {startMediaUri ? '\uD83D\uDD04 Change Start Media' : '\uD83D\uDCCC Pick Start Media (Intro/Cover)'}
+                          </Text>
+                        </TouchableOpacity>
+                        {!!startMediaUri && (
+                          <TouchableOpacity onPress={handleClearStartMedia} style={{ padding: 6, marginLeft: 8 }}>
+                            <X size={16} color={colors.danger} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      {startMediaUri ? (
+                        <View style={{ position: 'relative', width: 80, height: 80, marginBottom: 12 }}>
+                          <Image source={{ uri: startMediaUri }} style={{ width: 80, height: 80, borderRadius: 8 }} resizeMode="cover" />
+                          <View style={[
+                            styles.indexBadge,
+                            { backgroundColor: colors.primary, position: 'absolute', bottom: 4, left: 4, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+                          ]}>
+                            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>START</Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 12 }}>{'No start media set - first pool image will be slide #1'}</Text>
+                      )}
+
+                      {/* End Media */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={handlePickEndMedia}
+                          style={[
+                            styles.urlAddBtn,
+                            { backgroundColor: colors.primaryContainer, paddingHorizontal: 14, paddingVertical: 10, flex: 1 },
+                          ]}
+                        >
+                          <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
+                            {endMediaUri ? '\uD83D\uDD04 Change End Media' : '\uD83C\uDFC1 Pick End Media (Outro/CTA)'}
+                          </Text>
+                        </TouchableOpacity>
+                        {!!endMediaUri && (
+                          <TouchableOpacity onPress={handleClearEndMedia} style={{ padding: 6, marginLeft: 8 }}>
+                            <X size={16} color={colors.danger} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      {endMediaUri ? (
+                        <View style={{ position: 'relative', width: 80, height: 80, marginBottom: 4 }}>
+                          <Image source={{ uri: endMediaUri }} style={{ width: 80, height: 80, borderRadius: 8 }} resizeMode="cover" />
+                          <View style={[
+                            styles.indexBadge,
+                            { backgroundColor: '#EF4444', position: 'absolute', bottom: 4, left: 4, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+                          ]}>
+                            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>END</Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>{'No end media set - last pool image will be the final slide'}</Text>
+                      )}
+                    </View>
+
+                    {/* Bulk Pick Button */}
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handleBulkPickMedia}
+                      style={[styles.bulkPickBtn, { backgroundColor: colors.primary }]}
+                    >
+                      <Upload size={16} color="#FFFFFF" />
+                      <Text style={styles.bulkPickBtnText}>Bulk Pick Photos/Videos (Unlimited 100+)</Text>
+                    </TouchableOpacity>
+
+                    {/* Paste URL row */}
+                    <View style={styles.pasteUrlRow}>
+                      <TextInput
+                        style={[
+                          styles.textInput,
+                          { flex: 1, backgroundColor: colors.surfaceVariant, color: colors.textPrimary, borderColor: colors.border },
+                        ]}
+                        placeholder="Paste photo/video URL..."
+                        placeholderTextColor={colors.textMuted}
+                        value={pastedUrl}
+                        onChangeText={setPastedUrl}
+                      />
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={handleAppendPastedUrl}
+                        style={[styles.urlAddBtn, { backgroundColor: colors.primaryContainer }]}
+                      >
+                        <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>+ Add URL</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Media Pool Grid Header (Collapsible) */}
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setMediaPoolExpanded(!mediaPoolExpanded)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: 16,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 0 }]}>
+                        MEDIA POOL ITEMS ({loopMediaPool.length})
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                          {mediaPoolExpanded ? 'Collapse' : 'Expand'}
+                        </Text>
+                        {mediaPoolExpanded ? (
+                          <ChevronUp size={16} color={colors.textSecondary} />
+                        ) : (
+                          <ChevronDown size={16} color={colors.textSecondary} />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+
+                    {mediaPoolExpanded && (
+                      loopMediaPool.length === 0 ? (
+                        <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
+                          No media items in pool yet. Tap "Bulk Pick Photos/Videos" to select photos from phone storage.
+                        </Text>
+                      ) : (
+                        <View style={styles.mediaPoolGrid}>
+                          {loopMediaPool.map((uri, idx) => (
+                            <View key={idx} style={styles.mediaGridCell}>
+                              <Image source={{ uri }} style={styles.mediaGridThumb} resizeMode="cover" />
+                              <TouchableOpacity
+                                onPress={() => handleRemoveMediaFromPool(idx)}
+                                style={styles.removeMediaBadge}
+                              >
+                                <Trash2 size={12} color="#FFFFFF" />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      )
+                    )}
+                  </>
                 )}
               </View>
             )}

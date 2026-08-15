@@ -54,10 +54,12 @@
   "build": {
     "appId": "com.socialsched.app",
     "productName": "SocialSched",
+    "icon": "assets/icon.png",
     "directories": {
       "output": "dist-desktop"
     },
     "win": {
+      "icon": "assets/icon.png",
       "target": [
         "nsis",
         "portable"

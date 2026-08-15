@@ -1,7 +1,15 @@
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
-const HIDDEN_MEDIA_DIR = `${FileSystem.documentDirectory}.socialsched_media/`;
+const HIDDEN_MEDIA_DIR = `${FileSystem.documentDirectory}smartflow_media/`;
+
+// Simple check to detect if we are running in Electron desktop shell
+const getElectronAPI = () => {
+  if (typeof window !== 'undefined' && (window as any).electronAPI) {
+    return (window as any).electronAPI;
+  }
+  return null;
+};
 
 /**
  * Ensures the app's hidden local media directory exists.
@@ -25,7 +33,16 @@ async function ensureHiddenDirExists(): Promise<string> {
  * Web URIs and remote http/https URLs are preserved as is.
  */
 export async function saveMediaToHiddenFolder(sourceUri: string): Promise<string> {
-  if (Platform.OS === 'web' || !sourceUri || sourceUri.startsWith('http')) {
+  if (!sourceUri) return sourceUri;
+
+  // Windows Desktop .exe (Electron) support
+  const electronAPI = getElectronAPI();
+  if (Platform.OS === 'web' && electronAPI) {
+    return await electronAPI.saveMediaFile(sourceUri);
+  }
+
+  // Web Browser / Remote URLs support
+  if (Platform.OS === 'web' || sourceUri.startsWith('http') || sourceUri.startsWith('data:')) {
     return sourceUri;
   }
 
@@ -34,7 +51,7 @@ export async function saveMediaToHiddenFolder(sourceUri: string): Promise<string
     if (!dir) return sourceUri;
 
     // Check if sourceUri is already inside our hidden folder
-    if (sourceUri.includes('.socialsched_media')) {
+    if (sourceUri.includes('smartflow_media')) {
       return sourceUri;
     }
 
@@ -94,7 +111,7 @@ export async function assignNamedMediaFile(
 
     // 2. Ensure sourceUri is saved in local hidden folder first
     let localSourceUri = sourceUri;
-    if (!sourceUri.includes('.socialsched_media')) {
+    if (!sourceUri.includes('smartflow_media')) {
       localSourceUri = await saveMediaToHiddenFolder(sourceUri);
     }
 
@@ -158,6 +175,12 @@ export async function restoreOriginalMediaFile(
  * Calculates the total size (in bytes) and file count of the hidden media folder.
  */
 export async function getHiddenMediaStorageInfo(): Promise<{ sizeBytes: number; fileCount: number }> {
+  // Windows Desktop .exe (Electron) support
+  const electronAPI = getElectronAPI();
+  if (Platform.OS === 'web' && electronAPI) {
+    return await electronAPI.getStorageStats();
+  }
+
   if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
     return { sizeBytes: 0, fileCount: 0 };
   }
@@ -186,6 +209,12 @@ export async function getHiddenMediaStorageInfo(): Promise<{ sizeBytes: number; 
  * Deletes all files in the hidden media folder.
  */
 export async function clearHiddenMediaStorage(): Promise<boolean> {
+  // Windows Desktop .exe (Electron) support
+  const electronAPI = getElectronAPI();
+  if (Platform.OS === 'web' && electronAPI) {
+    return await electronAPI.clearStorage();
+  }
+
   if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
     return true;
   }
@@ -201,4 +230,3 @@ export async function clearHiddenMediaStorage(): Promise<boolean> {
     return false;
   }
 }
-

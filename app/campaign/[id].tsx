@@ -62,6 +62,7 @@ import {
   Info,
   Calendar,
   Image as ImageIcon,
+  Plus,
 } from 'lucide-react-native';
 import { AddContainerModal } from '../../src/components/container/AddContainerModal';
 import Svg, { Circle } from 'react-native-svg';
@@ -185,6 +186,14 @@ export default function ContainerDetailScreen() {
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
   const [mediaPoolTab, setMediaPoolTab] = useState<'all' | 'fresh' | 'used'>('all');
   const [infoModalVisible, setInfoModalVisible] = useState(false);
+
+  // Captions Manager modal states
+  const [captionsModalVisible, setCaptionsModalVisible] = useState(false);
+  const [isCaptionsMultiSelect, setIsCaptionsMultiSelect] = useState(false);
+  const [selectedCaptionIndices, setSelectedCaptionIndices] = useState<number[]>([]);
+  const [expandedCaptionIndices, setExpandedCaptionIndices] = useState<number[]>([]);
+  const [newCaptionText, setNewCaptionText] = useState('');
+  const [isAddingCaption, setIsAddingCaption] = useState(false);
   const getTomorrowString = () => {
     const d = new Date(Date.now() + 86400000);
     return d.toISOString().split('T')[0];
@@ -197,6 +206,42 @@ export default function ContainerDetailScreen() {
 
   // Spin animation for uploading/forcing indicators
   const spinAnim = useRef(new Animated.Value(0)).current;
+
+  // Add caption handler (supports bulk paste - 1 per line)
+  const handleAddCaptions = async () => {
+    if (!newCaptionText.trim()) return;
+    const lines = newCaptionText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+    if (lines.length === 0) return;
+
+    const currentDescs = container.loopDescriptions || [];
+    const updatedDescs = [...currentDescs, ...lines];
+    await updatePost(container.id, { loopDescriptions: updatedDescs } as any); // Update via store/DB
+    setNewCaptionText('');
+    setIsAddingCaption(false);
+  };
+
+  // Delete selected captions handler
+  const handleDeleteCaptions = async () => {
+    const currentDescs = container.loopDescriptions || [];
+    if (selectedCaptionIndices.length === 0) return;
+    const updatedDescs = currentDescs.filter((_, idx) => !selectedCaptionIndices.includes(idx));
+    await updatePost(container.id, { loopDescriptions: updatedDescs } as any); // Update via store/DB
+    setSelectedCaptionIndices([]);
+    setIsCaptionsMultiSelect(false);
+  };
+
+  const toggleSelectAllCaptions = () => {
+    const currentDescs = container.loopDescriptions || [];
+    if (selectedCaptionIndices.length === currentDescs.length) {
+      setSelectedCaptionIndices([]);
+    } else {
+      setSelectedCaptionIndices(currentDescs.map((_, idx) => idx));
+    }
+  };
+
   useEffect(() => {
     Animated.loop(
       Animated.timing(spinAnim, {
@@ -588,12 +633,22 @@ export default function ContainerDetailScreen() {
                 </Text>
                 <Text style={[styles.loopMetricLabel, { color: colors.textSecondary }]}>Used Media</Text>
               </View>
-              <View style={styles.loopMetricCell}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  setIsCaptionsMultiSelect(false);
+                  setSelectedCaptionIndices([]);
+                  setExpandedCaptionIndices([]);
+                  setIsAddingCaption(false);
+                  setCaptionsModalVisible(true);
+                }}
+                style={styles.loopMetricCell}
+              >
                 <Text style={[styles.loopMetricVal, { color: colors.textPrimary }]}>
                   {container.loopDescriptions?.length || 0}
                 </Text>
-                <Text style={[styles.loopMetricLabel, { color: colors.textSecondary }]}>Captions</Text>
-              </View>
+                <Text style={[styles.loopMetricLabel, { color: colors.textSecondary, textDecorationLine: 'underline' }]}>Captions</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.loopActionBtnsRow}>
@@ -1116,8 +1171,8 @@ export default function ContainerDetailScreen() {
             const usedCount = pool.filter(u => usedSet.has(u)).length;
             const tabs: { key: 'all' | 'fresh' | 'used'; label: string; count: number; color: string }[] = [
               { key: 'all',   label: 'All',          count: pool.length, color: colors.primary },
-              { key: 'fresh', label: 'Start Media',  count: freshCount,  color: '#8B5CF6' },
-              { key: 'used',  label: 'End Media',    count: usedCount,   color: '#10B981' },
+              { key: 'fresh', label: 'Fresh Media',  count: freshCount,  color: '#8B5CF6' },
+              { key: 'used',  label: 'Used Media',   count: usedCount,   color: '#10B981' },
             ];
             return (
               <View style={[styles.mediaPoolTabRow, { borderBottomColor: colors.border }]}>
@@ -1156,6 +1211,31 @@ export default function ContainerDetailScreen() {
               </View>
             );
           })()}
+
+          {/* Fixed Bookend Media Row - Shows Start & End media prominently if uploaded */}
+          {(!!container.startMediaUri || !!container.endMediaUri) && (
+            <View style={[styles.modalBookendsRow, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.bookendsLabel, { color: colors.textSecondary }]}>FIXED BOOKEND MEDIA</Text>
+              <View style={{ flexDirection: 'row', columnGap: 16 }}>
+                {!!container.startMediaUri && (
+                  <View style={styles.bookendMediaItem}>
+                    <Image source={{ uri: container.startMediaUri }} style={styles.bookendThumb} />
+                    <View style={[styles.bookendBadge, { backgroundColor: colors.primary }]}>
+                      <Text style={styles.bookendBadgeText}>START</Text>
+                    </View>
+                  </View>
+                )}
+                {!!container.endMediaUri && (
+                  <View style={styles.bookendMediaItem}>
+                    <Image source={{ uri: container.endMediaUri }} style={styles.bookendThumb} />
+                    <View style={[styles.bookendBadge, { backgroundColor: '#EF4444' }]}>
+                      <Text style={styles.bookendBadgeText}>END</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
 
           {/* Grid Content */}
           {(() => {
@@ -1487,6 +1567,221 @@ export default function ContainerDetailScreen() {
               </View>
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+
+      {/* Captions Manager Modal */}
+      <Modal
+        visible={captionsModalVisible}
+        animationType="slide"
+        onRequestClose={() => setCaptionsModalVisible(false)}
+      >
+        <View style={[styles.fullScreenModalContainer, { backgroundColor: colors.background }]}>
+          {/* Header */}
+          <View style={[styles.fullScreenModalHeader, { borderBottomColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MessageSquare size={20} color="#8B5CF6" />
+              <Text style={[styles.fullScreenModalTitle, { color: colors.textPrimary, marginLeft: 8 }]}>
+                {'Captions Pool (' + (container.loopDescriptions?.length || 0) + ')'}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
+              {/* Add Button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setIsAddingCaption(!isAddingCaption)}
+                style={[styles.miniHeaderActionBtn, { backgroundColor: isAddingCaption ? colors.primaryContainer : colors.surfaceVariant }]}
+              >
+                <Plus size={16} color={isAddingCaption ? colors.primary : colors.textPrimary} />
+              </TouchableOpacity>
+
+              {/* Trash/Delete Mode Button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setIsCaptionsMultiSelect(!isCaptionsMultiSelect);
+                  setSelectedCaptionIndices([]);
+                }}
+                style={[
+                  styles.miniHeaderActionBtn,
+                  {
+                    backgroundColor: isCaptionsMultiSelect ? '#EF444420' : colors.surfaceVariant,
+                    borderColor: isCaptionsMultiSelect ? '#EF4444' : 'transparent',
+                    borderWidth: isCaptionsMultiSelect ? 1 : 0,
+                  },
+                ]}
+              >
+                <Trash2 size={15} color={isCaptionsMultiSelect ? '#EF4444' : colors.textPrimary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setCaptionsModalVisible(false)}
+                style={styles.closeBtn}
+              >
+                <X size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Add Caption Form Area */}
+          {isAddingCaption && (
+            <View style={[styles.inlineAddCaptionContainer, { backgroundColor: colors.surfaceVariant, borderBottomColor: colors.border }]}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+                ADD CAPTIONS (supports bulk paste - 1 per line)
+              </Text>
+              <TextInput
+                style={[styles.inlineAddInput, { backgroundColor: colors.background, color: colors.textPrimary, borderColor: colors.border }]}
+                placeholder="Enter caption text (or paste multiple lines)..."
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={3}
+                value={newCaptionText}
+                onChangeText={setNewCaptionText}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', columnGap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setIsAddingCaption(false);
+                    setNewCaptionText('');
+                  }}
+                  style={[styles.smallActionBtn, { backgroundColor: colors.surface }]}
+                >
+                  <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleAddCaptions}
+                  style={[styles.smallActionBtn, { backgroundColor: colors.primary }]}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Multi-Select Action Bar */}
+          {isCaptionsMultiSelect && (
+            <View style={[styles.captionMultiActionBar, { backgroundColor: colors.surfaceVariant, borderBottomColor: colors.border }]}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={toggleSelectAllCaptions}
+                style={{ flexDirection: 'row', alignItems: 'center' }}
+              >
+                {selectedCaptionIndices.length === (container.loopDescriptions?.length || 0) ? (
+                  <CheckSquare size={20} color={colors.primary} />
+                ) : (
+                  <Square size={20} color={colors.textSecondary} />
+                )}
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginLeft: 8 }}>
+                  {'Select All (' + selectedCaptionIndices.length + ')'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleDeleteCaptions}
+                disabled={selectedCaptionIndices.length === 0}
+                style={[
+                  styles.captionDeleteBatchBtn,
+                  { backgroundColor: selectedCaptionIndices.length > 0 ? '#EF4444' : colors.textMuted },
+                ]}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
+                  {'DELETE SELECTED'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Caption List */}
+          {(!container.loopDescriptions || container.loopDescriptions.length === 0) ? (
+            <View style={styles.emptyGridState}>
+              <MessageSquare size={48} color={colors.textMuted} />
+              <Text style={[styles.emptyGridText, { color: colors.textSecondary, marginTop: 12 }]}>
+                No captions in pool. Click the plus icon to add.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={container.loopDescriptions}
+              keyExtractor={(_, index) => String(index)}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item: captionText, index }) => {
+                const isSelected = selectedCaptionIndices.includes(index);
+                const isExpanded = expandedCaptionIndices.includes(index);
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      if (isCaptionsMultiSelect) {
+                        if (isSelected) {
+                          setSelectedCaptionIndices(selectedCaptionIndices.filter(i => i !== index));
+                        } else {
+                          setSelectedCaptionIndices([...selectedCaptionIndices, index]);
+                        }
+                      } else {
+                        if (isExpanded) {
+                          setExpandedCaptionIndices(expandedCaptionIndices.filter(i => i !== index));
+                        } else {
+                          setExpandedCaptionIndices([...expandedCaptionIndices, index]);
+                        }
+                      }
+                    }}
+                    style={[
+                      styles.captionCard,
+                      {
+                        backgroundColor: isSelected ? colors.primaryContainer + '20' : colors.surface,
+                        borderColor: isSelected ? colors.primary : colors.border,
+                        borderWidth: isSelected ? 1.5 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {/* Checkbox (only in multiselect) */}
+                      {isCaptionsMultiSelect && (
+                        <View style={{ marginRight: 10 }}>
+                          {isSelected ? (
+                            <CheckSquare size={18} color={colors.primary} />
+                          ) : (
+                            <Square size={18} color={colors.textSecondary} />
+                          )}
+                        </View>
+                      )}
+
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, marginRight: 8 }}>
+                        {'#' + (index + 1)}
+                      </Text>
+
+                      <Text
+                        numberOfLines={isExpanded ? undefined : 1}
+                        ellipsizeMode="tail"
+                        style={{
+                          fontSize: 12,
+                          color: colors.textPrimary,
+                          lineHeight: 16,
+                          flex: 1,
+                        }}
+                      >
+                        {captionText}
+                      </Text>
+
+                      {/* Expand Chevron (only in normal mode) */}
+                      {!isCaptionsMultiSelect && (
+                        <View style={{ marginLeft: 8 }}>
+                          {isExpanded ? (
+                            <ChevronUp size={16} color={colors.textMuted} />
+                          ) : (
+                            <ChevronDown size={16} color={colors.textMuted} />
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
         </View>
       </Modal>
     </View>
@@ -2205,5 +2500,80 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     marginBottom: 6,
+  },
+  modalBookendsRow: {
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  bookendsLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  bookendMediaItem: {
+    position: 'relative',
+    width: 70,
+    height: 70,
+  },
+  bookendThumb: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+  },
+  bookendBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  bookendBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  miniHeaderActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inlineAddCaptionContainer: {
+    padding: 14,
+    borderBottomWidth: 1,
+  },
+  inlineAddInput: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 8,
+    fontSize: 12,
+    textAlignVertical: 'top',
+  },
+  smallActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  captionMultiActionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  captionDeleteBatchBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  captionCard: {
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
   },
 });

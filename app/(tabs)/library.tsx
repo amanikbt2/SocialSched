@@ -6,7 +6,7 @@ import { FAB } from '../../src/components/common/FAB';
 import { useThemeStore } from '../../src/stores/useThemeStore';
 import { useMediaStore } from '../../src/stores/useMediaStore';
 import { useMediaCollectionStore, MediaCollection } from '../../src/stores/useMediaCollectionStore';
-import { ImagePlus, Search, Star, Trash2, Folder, Film, Plus, X, Layers, Sparkles, CheckCircle2, Repeat, Clock } from 'lucide-react-native';
+import { ImagePlus, Search, Star, Trash2, Folder, Film, Plus, X, Layers, Sparkles, CheckCircle2, Repeat, Clock, FileText, Edit2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { pickLocalMedia } from '../../src/utils/mediaPicker';
 
@@ -17,13 +17,23 @@ export default function LibraryScreen() {
   const { items, folders, selectedFolder, searchQuery, setSelectedFolder, setSearchQuery, addMediaItem, toggleFavorite, deleteMediaItem, loadMedia } = useMediaStore();
 
   // Collections Store
-  const { collections, loadCollections, createCollection, deleteCollection } = useMediaCollectionStore();
+  const { collections, loadCollections, createCollection, deleteCollection, updateCollection } = useMediaCollectionStore();
 
   const [activeSection, setActiveSection] = useState<'items' | 'collections'>('items');
   const [createModalVisible, setCreateModalVisible] = useState(false);
 
+  // View Collection Modal state
+  const [viewCollectionModalVisible, setViewCollectionModalVisible] = useState(false);
+  const [selectedViewCollection, setSelectedViewCollection] = useState<MediaCollection | null>(null);
+  const [fullscreenPreviewUri, setFullscreenPreviewUri] = useState<string | null>(null);
+  const [isEditingCol, setIsEditingCol] = useState(false);
+  const [editColName, setEditColName] = useState('');
+  const [editColTextRaw, setEditColTextRaw] = useState('');
+
   // Create Collection State
   const [colName, setColName] = useState('');
+  const [colType, setColType] = useState<'media' | 'text'>('media');
+  const [colTextRaw, setColTextRaw] = useState('');
   const [colMediaPool, setColMediaPool] = useState<string[]>([]);
   const [colStartMedia, setColStartMedia] = useState<string | undefined>(undefined);
   const [colEndMedia, setColEndMedia] = useState<string | undefined>(undefined);
@@ -63,19 +73,64 @@ export default function LibraryScreen() {
       Alert.alert('Validation Error', 'Please enter a collection name.');
       return;
     }
-    if (colMediaPool.length === 0) {
-      Alert.alert('Validation Error', 'Please add at least one media item to the collection.');
-      return;
+
+    if (colType === 'media') {
+      if (colMediaPool.length === 0) {
+        Alert.alert('Validation Error', 'Please add at least one media item to the collection.');
+        return;
+      }
+      await createCollection(colName.trim(), 'media', colMediaPool, colStartMedia, colEndMedia, undefined);
+    } else {
+      const lines = colTextRaw
+        .split('<==>')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      if (lines.length === 0) {
+        Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
+        return;
+      }
+      await createCollection(colName.trim(), 'text', undefined, undefined, undefined, lines);
     }
-    await createCollection(colName.trim(), colMediaPool, colStartMedia, colEndMedia);
 
     // Reset Form
     setColName('');
+    setColType('media');
+    setColTextRaw('');
     setColMediaPool([]);
     setColStartMedia(undefined);
     setColEndMedia(undefined);
     setCreateModalVisible(false);
     Alert.alert('Success', `Collection "${colName}" created successfully!`);
+  };
+
+  const handleUpdateCollectionSubmit = async () => {
+    if (!selectedViewCollection) return;
+    if (!editColName.trim()) {
+      Alert.alert('Validation Error', 'Please enter a collection name.');
+      return;
+    }
+
+    const lines = editColTextRaw
+      .split('<==>')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (lines.length === 0) {
+      Alert.alert('Validation Error', 'Please enter at least one description in the text collection.');
+      return;
+    }
+
+    const updated: MediaCollection = {
+      ...selectedViewCollection,
+      name: editColName.trim(),
+      descriptions: lines,
+    };
+
+    await updateCollection(updated);
+    setSelectedViewCollection(updated);
+    setIsEditingCol(false);
+    Alert.alert('Success', 'Collection updated successfully!');
   };
 
   const handlePickMedia = async () => {
@@ -146,18 +201,28 @@ export default function LibraryScreen() {
             </Card>
           ) : (
             collections.map((col) => (
-              <View
+              <TouchableOpacity
                 key={col.id}
+                activeOpacity={0.9}
+                onPress={() => {
+                  setSelectedViewCollection(col);
+                  setViewCollectionModalVisible(true);
+                }}
                 style={[styles.collectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
                 <View style={styles.collectionHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Layers size={18} color={colors.primary} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8 }}>
+                    {col.type === 'text' ? (
+                      <FileText size={18} color={colors.primary} />
+                    ) : (
+                      <Layers size={18} color={colors.primary} />
+                    )}
                     <Text style={[styles.collectionCardTitle, { color: colors.textPrimary }]}>{col.name}</Text>
                   </View>
                   <TouchableOpacity
                     activeOpacity={0.7}
-                    onPress={() => {
+                    onPress={(e) => {
+                      e.stopPropagation && e.stopPropagation();
                       Alert.alert(
                         'Delete Collection',
                         `Are you sure you want to delete the collection "${col.name}"?`,
@@ -167,33 +232,68 @@ export default function LibraryScreen() {
                         ]
                       );
                     }}
+                    style={{ padding: 4 }}
                   >
                     <Trash2 size={16} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
 
-                <Text style={[styles.collectionStatsText, { color: colors.textSecondary }]}>
-                  📂 {col.mediaUris.length} media items
-                </Text>
-
-                {/* Previews */}
-                {(col.startMediaUri || col.endMediaUri) && (
-                  <View style={styles.previewsRow}>
-                    {col.startMediaUri && (
-                      <View style={styles.previewCell}>
-                        <Text style={[styles.previewLabel, { color: colors.textSecondary }]}>Start Cover</Text>
-                        <Image source={{ uri: col.startMediaUri }} style={styles.previewThumb} />
-                      </View>
-                    )}
-                    {col.endMediaUri && (
-                      <View style={styles.previewCell}>
-                        <Text style={[styles.previewLabel, { color: colors.textSecondary }]}>End Outro</Text>
-                        <Image source={{ uri: col.endMediaUri }} style={styles.previewThumb} />
+                {col.type === 'text' ? (
+                  <View>
+                    <Text style={[styles.collectionStatsText, { color: colors.textSecondary }]}>
+                      📝 {col.descriptions?.length || 0} description items
+                    </Text>
+                    <View style={{
+                      marginTop: 8,
+                      padding: 8,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderStyle: 'dashed',
+                      backgroundColor: colors.background,
+                      gap: 4
+                    }}>
+                      {(col.descriptions || []).slice(0, 2).map((desc, i) => (
+                        <Text
+                          key={i}
+                          numberOfLines={1}
+                          style={{ fontSize: 11, color: colors.textSecondary, fontStyle: 'italic' }}
+                        >
+                          {`#${i + 1}: ${desc}`}
+                        </Text>
+                      ))}
+                      {(col.descriptions?.length || 0) > 2 && (
+                        <Text style={{ fontSize: 9, color: colors.textMuted, fontWeight: '700', marginTop: 2 }}>
+                          {`+ ${(col.descriptions?.length || 0) - 2} more...`}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                ) : (
+                  <View>
+                    <Text style={[styles.collectionStatsText, { color: colors.textSecondary }]}>
+                      📂 {col.mediaUris?.length || 0} media items
+                    </Text>
+                    {/* Previews */}
+                    {(col.startMediaUri || col.endMediaUri) && (
+                      <View style={styles.previewsRow}>
+                        {col.startMediaUri && (
+                          <View style={styles.previewCell}>
+                            <Text style={[styles.previewLabel, { color: colors.textSecondary }]}>Start Cover</Text>
+                            <Image source={{ uri: col.startMediaUri }} style={styles.previewThumb} />
+                          </View>
+                        )}
+                        {col.endMediaUri && (
+                          <View style={styles.previewCell}>
+                            <Text style={[styles.previewLabel, { color: colors.textSecondary }]}>End Outro</Text>
+                            <Image source={{ uri: col.endMediaUri }} style={styles.previewThumb} />
+                          </View>
+                        )}
                       </View>
                     )}
                   </View>
                 )}
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </ScrollView>
@@ -201,7 +301,7 @@ export default function LibraryScreen() {
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
           {/* Top Search & Import Bar */}
           <View style={styles.topBar}>
-            <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border, flex: 1 }]}>
               <Search size={18} color={colors.textSecondary} />
               <TextInput
                 placeholder="Search media files..."
@@ -211,15 +311,6 @@ export default function LibraryScreen() {
                 style={[styles.searchInput, { color: colors.textPrimary }]}
               />
             </View>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={handlePickMedia}
-              style={[styles.importBtn, { backgroundColor: colors.primary }]}
-            >
-              <ImagePlus size={18} color="#FFFFFF" />
-              <Text style={styles.importText}>Import</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Folders horizontal bar */}
@@ -317,10 +408,8 @@ export default function LibraryScreen() {
         </ScrollView>
       )}
 
-      {activeSection === 'collections' ? (
+      {activeSection === 'collections' && (
         <FAB label="Create Collection" onPress={() => setCreateModalVisible(true)} />
-      ) : (
-        <FAB label="Upload Media" onPress={handlePickMedia} />
       )}
 
       {/* Create Collection Modal */}
@@ -347,77 +436,142 @@ export default function LibraryScreen() {
               value={colName}
               onChangeText={setColName}
               style={[styles.modalInput, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
-            />
-
-            {/* Media Upload Buttons */}
-            <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 20 }]}>ADD PHOTO/VIDEO ITEMS</Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                      {/* Collection Type Selector */}
+            <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>COLLECTION TYPE</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
               <TouchableOpacity
-                onPress={handleBulkPickCollectionMedia}
-                style={[styles.pickBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setColType('media')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  alignItems: 'center',
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colType === 'media' ? colors.primary : colors.border,
+                  backgroundColor: colType === 'media' ? colors.primaryContainer : colors.surface,
+                }}
               >
-                <Plus size={16} color="#FFFFFF" />
-                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Bulk Pick Files</Text>
+                <Layers size={16} color={colType === 'media' ? colors.primary : colors.textSecondary} style={{ marginBottom: 4 }} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colType === 'media' ? colors.primary : colors.textSecondary }}>Media Collection</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={() => setColType('text')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  alignItems: 'center',
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colType === 'text' ? colors.primary : colors.border,
+                  backgroundColor: colType === 'text' ? colors.primaryContainer : colors.surface,
+                }}
+              >
+                <FileText size={16} color={colType === 'text' ? colors.primary : colors.textSecondary} style={{ marginBottom: 4 }} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colType === 'text' ? colors.primary : colors.textSecondary }}>Text Collection</Text>
               </TouchableOpacity>
             </View>
 
-            {/* URL input */}
-            <View style={[styles.urlRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <TextInput
-                placeholder="Or paste photo/video URL..."
-                placeholderTextColor={colors.textMuted}
-                value={pastedUrl}
-                onChangeText={setPastedUrl}
-                style={{ flex: 1, color: colors.textPrimary, paddingVertical: 8, paddingHorizontal: 12 }}
-              />
-              <TouchableOpacity
-                onPress={handleAppendPastedUrl}
-                style={[styles.addUrlBtn, { backgroundColor: colors.primaryContainer }]}
-              >
-                <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>+ Add URL</Text>
-              </TouchableOpacity>
-            </View>
+            {colType === 'media' ? (
+              <>
+                {/* Media Upload Buttons */}
+                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 10 }]}>ADD PHOTO/VIDEO ITEMS</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                  <TouchableOpacity
+                    onPress={handleBulkPickCollectionMedia}
+                    style={[styles.pickBtn, { backgroundColor: colors.primary }]}
+                  >
+                    <Plus size={16} color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Bulk Pick Files</Text>
+                  </TouchableOpacity>
+                </View>
 
-            {/* Current Media Pool Grid */}
-            {colMediaPool.length > 0 && (
-              <View style={{ marginTop: 20 }}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  ADDED ITEMS ({colMediaPool.length})
+                {/* URL input */}
+                <View style={[styles.urlRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                  <TextInput
+                    placeholder="Or paste photo/video URL..."
+                    placeholderTextColor={colors.textMuted}
+                    value={pastedUrl}
+                    onChangeText={setPastedUrl}
+                    style={{ flex: 1, color: colors.textPrimary, paddingVertical: 8, paddingHorizontal: 12 }}
+                  />
+                  <TouchableOpacity
+                    onPress={handleAppendPastedUrl}
+                    style={[styles.addUrlBtn, { backgroundColor: colors.primaryContainer }]}
+                  >
+                    <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>+ Add URL</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Current Media Pool Grid */}
+                {colMediaPool.length > 0 && (
+                  <View style={{ marginTop: 20 }}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                      ADDED ITEMS ({colMediaPool.length})
+                    </Text>
+                    
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 10 }}>
+                      {colMediaPool.map((uri, idx) => {
+                        const isStart = colStartMedia === uri;
+                        const isEnd = colEndMedia === uri;
+                        return (
+                          <View key={idx} style={[styles.horizontalThumbContainer, { borderColor: isStart ? colors.primary : isEnd ? colors.success : colors.border }]}>
+                            <Image source={{ uri }} style={styles.horizontalThumb} />
+                            <TouchableOpacity
+                              onPress={() => handleRemoveMediaFromPool(idx)}
+                              style={styles.removeBadge}
+                            >
+                              <X size={10} color="#FFFFFF" />
+                            </TouchableOpacity>
+                            
+                            {/* Selector Badges */}
+                            <View style={styles.badgeRow}>
+                              <TouchableOpacity
+                                onPress={() => setColStartMedia(isStart ? undefined : uri)}
+                                style={[styles.badgeBtn, { backgroundColor: isStart ? colors.primary : 'rgba(0,0,0,0.6)' }]}
+                              >
+                                <Text style={styles.badgeBtnText}>Start</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => setColEndMedia(isEnd ? undefined : uri)}
+                                style={[styles.badgeBtn, { backgroundColor: isEnd ? colors.success : 'rgba(0,0,0,0.6)' }]}
+                              >
+                                <Text style={styles.badgeBtnText}>End</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+              </>
+            ) : (
+              <View style={{ marginTop: 10 }}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>DESCRIPTIONS LIST</Text>
+                <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, lineHeight: 16 }}>
+                  Paste a block of descriptions/captions, separating each with "&lt;==&gt;". They will be automatically split into individual list items.
                 </Text>
-                
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 10 }}>
-                  {colMediaPool.map((uri, idx) => {
-                    const isStart = colStartMedia === uri;
-                    const isEnd = colEndMedia === uri;
-                    return (
-                      <View key={idx} style={[styles.horizontalThumbContainer, { borderColor: isStart ? colors.primary : isEnd ? colors.success : colors.border }]}>
-                        <Image source={{ uri }} style={styles.horizontalThumb} />
-                        <TouchableOpacity
-                          onPress={() => handleRemoveMediaFromPool(idx)}
-                          style={styles.removeBadge}
-                        >
-                          <X size={10} color="#FFFFFF" />
-                        </TouchableOpacity>
-                        
-                        {/* Selector Badges */}
-                        <View style={styles.badgeRow}>
-                          <TouchableOpacity
-                            onPress={() => setColStartMedia(isStart ? undefined : uri)}
-                            style={[styles.badgeBtn, { backgroundColor: isStart ? colors.primary : 'rgba(0,0,0,0.6)' }]}
-                          >
-                            <Text style={styles.badgeBtnText}>Start</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => setColEndMedia(isEnd ? undefined : uri)}
-                            style={[styles.badgeBtn, { backgroundColor: isEnd ? colors.success : 'rgba(0,0,0,0.6)' }]}
-                          >
-                            <Text style={styles.badgeBtnText}>End</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
+                <TextInput
+                  multiline
+                  numberOfLines={10}
+                  placeholder="Promo text #1...&#10;&lt;==&gt;&#10;Promo text #2...&#10;&lt;==&gt;&#10;Promo text #3..."
+                  placeholderTextColor={colors.textMuted}
+                  value={colTextRaw}
+                  onChangeText={setColTextRaw}
+                  style={[
+                    styles.modalInput,
+                    {
+                      backgroundColor: colors.surface,
+                      color: colors.textPrimary,
+                      borderColor: colors.border,
+                      height: 180,
+                      textAlignVertical: 'top',
+                      padding: 12,
+                      fontSize: 13
+                    }
+                  ]}
+                />
               </View>
             )}
 
@@ -430,6 +584,246 @@ export default function LibraryScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
+      </Modal>
+
+      {/* View Collection Details Modal (Grid view of media) */}
+      <Modal
+        visible={viewCollectionModalVisible && !!selectedViewCollection}
+        animationType="slide"
+        onRequestClose={() => {
+          setViewCollectionModalVisible(false);
+          setSelectedViewCollection(null);
+          setIsEditingCol(false);
+        }}
+      >
+        <View style={[styles.modalScroll, { backgroundColor: colors.background }]}>
+          {/* Header */}
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {selectedViewCollection?.type === 'text' ? (
+                <FileText size={20} color={colors.primary} />
+              ) : (
+                <Layers size={20} color={colors.primary} />
+              )}
+              <Text style={[styles.modalTitle, { color: colors.textPrimary, marginLeft: 8 }]}>
+                {selectedViewCollection?.name || 'View Collection'}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {selectedViewCollection?.type === 'text' && !isEditingCol && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsEditingCol(true);
+                    setEditColName(selectedViewCollection.name);
+                    setEditColTextRaw(selectedViewCollection.descriptions?.join('\n<==>\n') || '');
+                  }}
+                  style={{ padding: 4 }}
+                >
+                  <Edit2 size={20} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={() => {
+                  setViewCollectionModalVisible(false);
+                  setSelectedViewCollection(null);
+                  setIsEditingCol(false);
+                }}
+              >
+                <X size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {isEditingCol ? (
+            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>EDIT COLLECTION NAME</Text>
+              <TextInput
+                placeholder="Collection name"
+                placeholderTextColor={colors.textMuted}
+                value={editColName}
+                onChangeText={setEditColName}
+                style={[styles.modalInput, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border, marginBottom: 16 }]}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>EDIT DESCRIPTIONS LIST</Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, lineHeight: 16 }}>
+                Modify individual items or paste/add items separated by "<==>".
+              </Text>
+              <TextInput
+                multiline
+                numberOfLines={10}
+                placeholder="Promo text #1...&#10;&lt;==&gt;&#10;Promo text #2..."
+                placeholderTextColor={colors.textMuted}
+                value={editColTextRaw}
+                onChangeText={setEditColTextRaw}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.surface,
+                    color: colors.textPrimary,
+                    borderColor: colors.border,
+                    height: 250,
+                    textAlignVertical: 'top',
+                    padding: 12,
+                    fontSize: 13
+                  }
+                ]}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                <TouchableOpacity
+                  onPress={handleUpdateCollectionSubmit}
+                  style={{
+                    flex: 1,
+                    backgroundColor: colors.success,
+                    paddingVertical: 12,
+                    borderRadius: 8,
+                    alignItems: 'center'
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>Save Changes</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  onPress={() => setIsEditingCol(false)}
+                  style={{
+                    flex: 1,
+                    backgroundColor: colors.surfaceVariant,
+                    paddingVertical: 12,
+                    borderRadius: 8,
+                    alignItems: 'center'
+                  }}
+                >
+                  <Text style={{ color: colors.textSecondary, fontWeight: '800', fontSize: 13 }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          ) : selectedViewCollection && selectedViewCollection.type === 'text' ? (
+            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 12 }]}>
+                {'COLLECTION ITEMS (' + (selectedViewCollection.descriptions?.length || 0) + ')'}
+              </Text>
+              {(selectedViewCollection.descriptions || []).map((desc, index) => (
+                <View
+                  key={index}
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 10,
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 10
+                  }}
+                >
+                  <View style={{ backgroundColor: colors.primaryContainer, borderRadius: 10, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary }}>#{index + 1}</Text>
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, lineHeight: 18 }}>{desc}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          ) : selectedViewCollection ? (
+            <ScrollView contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+              {/* Bookends Section */}
+              {(!!selectedViewCollection?.startMediaUri || !!selectedViewCollection?.endMediaUri) && (
+                <View style={[styles.modalBookendsRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.bookendsLabel, { color: colors.textSecondary }]}>FIXED BOOKEND MEDIA</Text>
+                  <View style={{ flexDirection: 'row', columnGap: 16 }}>
+                    {!!selectedViewCollection.startMediaUri && (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setFullscreenPreviewUri(selectedViewCollection.startMediaUri!)}
+                        style={styles.bookendMediaItem}
+                      >
+                        <Image source={{ uri: selectedViewCollection.startMediaUri }} style={styles.bookendThumb} />
+                        <View style={[styles.bookendBadge, { backgroundColor: colors.primary }]}>
+                          <Text style={styles.bookendBadgeText}>START</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                    {!!selectedViewCollection.endMediaUri && (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setFullscreenPreviewUri(selectedViewCollection.endMediaUri!)}
+                        style={styles.bookendMediaItem}
+                      >
+                        <Image source={{ uri: selectedViewCollection.endMediaUri }} style={styles.bookendThumb} />
+                        <View style={[styles.bookendBadge, { backgroundColor: '#EF4444' }]}>
+                          <Text style={styles.bookendBadgeText}>END</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Grid of Collection Media */}
+              <View style={{ padding: 16 }}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 12 }]}>
+                  {'COLLECTION ITEMS (' + (selectedViewCollection.mediaUris?.length || 0) + ')'}
+                </Text>
+                <View style={styles.collectionGrid}>
+                  {(selectedViewCollection.mediaUris || []).map((uri, index) => {
+                    const isVideo =
+                      uri.toLowerCase().endsWith('.mp4') ||
+                      uri.toLowerCase().endsWith('.mov') ||
+                      uri.toLowerCase().endsWith('.mkv') ||
+                      uri.toLowerCase().endsWith('.webm');
+                    return (
+                      <TouchableOpacity
+                        key={`${uri}-${index}`}
+                        activeOpacity={0.9}
+                        onPress={() => setFullscreenPreviewUri(uri)}
+                        style={[styles.gridCell, { borderColor: colors.border }]}
+                      >
+                        <Image source={{ uri }} style={styles.gridImage} resizeMode="cover" />
+                        {isVideo && (
+                          <View style={styles.videoGridBadge}>
+                            <Film size={12} color="#FFFFFF" />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+          ) : null}
+        </View>
+      </Modal>
+
+      {/* Full-Screen Media Preview Modal */}
+      <Modal
+        visible={!!fullscreenPreviewUri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFullscreenPreviewUri(null)}
+      >
+        <View style={styles.previewOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setFullscreenPreviewUri(null)}
+          />
+          <View style={styles.previewContainer}>
+            {!!fullscreenPreviewUri && (
+              <Image
+                source={{ uri: fullscreenPreviewUri }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            )}
+            <TouchableOpacity
+              style={styles.previewCloseBtn}
+              onPress={() => setFullscreenPreviewUri(null)}
+            >
+              <X size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -710,5 +1104,92 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
+  },
+  modalBookendsRow: {
+    padding: 20,
+    borderBottomWidth: 1,
+  },
+  bookendsLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  bookendMediaItem: {
+    position: 'relative',
+    width: 70,
+    height: 70,
+  },
+  bookendThumb: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+  },
+  bookendBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  bookendBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  collectionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  gridCell: {
+    width: '30.5%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  gridImage: {
+    width: '100%',
+    height: '100%',
+  },
+  videoGridBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    padding: 3,
+    borderRadius: 4,
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewContainer: {
+    width: '92%',
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewCloseBtn: {
+    position: 'absolute',
+    top: -50,
+    right: 10,
+    padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 22,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
