@@ -1699,9 +1699,9 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                         )}
                       </View>
                     );
-                  })() : collections.length === 0 ? (
+                  })() : collections.filter(c => c.type === 'media').length === 0 ? (
                     <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
-                      No collections created yet. Go to the "Media" tab to group your photos/videos into reusable collections.
+                      No media collections created yet. Go to the "Media" tab to group your photos/videos into reusable collections.
                     </Text>
                   ) : (
                     <View>
@@ -1709,20 +1709,20 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                         Quickly populate this pool using a pre-saved media collection:
                       </Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                        {collections.map((col) => (
+                        {collections.filter(c => c.type === 'media').map((col) => (
                           <TouchableOpacity
                             key={col.id}
                             activeOpacity={0.8}
                             onPress={() => {
                               Alert.alert(
                                 'Load Collection',
-                                `Would you like to load "${col.name}" with ${col.mediaUris.length} items?`,
+                                `Would you like to load "${col.name}" with ${col.mediaUris ? col.mediaUris.length : 0} items?`,
                                 [
                                   { text: 'Cancel', style: 'cancel' },
                                   {
                                     text: 'Load',
                                     onPress: () => {
-                                      setLoopMediaPool(col.mediaUris);
+                                      setLoopMediaPool(col.mediaUris || []);
                                       setStartMediaUri(col.startMediaUri || null);
                                       setEndMediaUri(col.endMediaUri || null);
                                       setSelectedCollectionId(col.id);
@@ -1745,7 +1745,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                           >
                             <Layers size={13} color={colors.primary} />
                             <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-                              {col.name} ({col.mediaUris.length})
+                              {col.name} ({col.mediaUris ? col.mediaUris.length : 0})
                             </Text>
                           </TouchableOpacity>
                         ))}

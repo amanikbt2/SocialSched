@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const url = require('url');
+// Determine the base directory of this script. In environments where __dirname is unavailable (e.g., ES modules bundled by some tools), fallback to the current working directory.
+const appDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 // Register custom 'app' protocol scheme as privileged (required for relative asset paths, Fetch API, and standard CSP behavior)
 protocol.registerSchemesAsPrivileged([
@@ -35,7 +37,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(appDir, 'preload.js'),
     },
   });
 
@@ -63,10 +65,11 @@ function createWindow() {
       console.error('Failed to load local Expo dev server on port 8085:', err);
     });
   } else {
-    // Load window via custom privileged protocol
-    console.log('[Electron] Loading app://index.html');
-    win.loadURL('app://index.html').catch(err => {
-      console.error('Failed to load app://index.html. Did you build the web bundle first?', err);
+    // Load window via custom privileged protocol — use localhost as the host
+    // so URL parsing treats the path correctly (not as hostname)
+    console.log('[Electron] Loading app://localhost/');
+    win.loadURL('app://localhost/').catch(err => {
+      console.error('Failed to load app://localhost/. Did you build the web bundle first?', err);
     });
   }
 
@@ -143,27 +146,61 @@ ipcMain.handle('clear-storage', async () => {
   }
 });
 
+const mimeTypes = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska'
+};
+
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
 app.whenReady().then(() => {
   // Define custom app:// protocol handler
   protocol.handle('app', (request) => {
-    let urlPath = request.url.slice('app://'.length);
-    // Remove query strings or hash parameters from the physical path resolver
-    urlPath = urlPath.split('?')[0].split('#')[0];
+    const reqUrl = new URL(request.url);
+    let urlPath = decodeURIComponent(reqUrl.pathname);
     
-    // Default to index.html if pointing to empty root
+    // Default to index.html if pointing to root
     if (urlPath === '' || urlPath === '/') {
-      urlPath = 'index.html';
+      urlPath = '/index.html';
     }
 
-    const absolutePath = path.normalize(path.join(__dirname, '../dist', urlPath));
+    // Remove leading slash for path.join
+    const relativePath = urlPath.startsWith('/') ? urlPath.slice(1) : urlPath;
+    const absolutePath = path.normalize(path.join(appDir, '../dist', relativePath));
     
     // Security check: ensure file resolves inside the dist folder bounds
-    const distPath = path.normalize(path.join(__dirname, '../dist'));
+    const distPath = path.normalize(path.join(appDir, '../dist'));
     if (!absolutePath.startsWith(distPath)) {
       return new Response('Access Denied', { status: 403 });
     }
 
-    return net.fetch(url.pathToFileURL(absolutePath).toString());
+    if (!fs.existsSync(absolutePath)) {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    const mimeType = getMimeType(absolutePath);
+    return new Response(fs.createReadStream(absolutePath), {
+      headers: { 'Content-Type': mimeType }
+    });
   });
 
   createWindow();

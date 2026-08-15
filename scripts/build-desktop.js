@@ -14,21 +14,9 @@ function runCmd(cmd) {
 console.log('Building web bundle...');
 runCmd('npm run build:web');
 
-// 1.5 Fix absolute paths in dist/index.html for Electron compatibility
-console.log('Fixing paths in dist/index.html for Electron compatibility...');
-const indexPath = path.join(__dirname, '../dist/index.html');
-if (fs.existsSync(indexPath)) {
-  let indexHtml = fs.readFileSync(indexPath, 'utf8');
-
-  // Fix absolute paths -> relative
-  indexHtml = indexHtml.replace(/href="\/(?!\/)/g, 'href="./');
-  indexHtml = indexHtml.replace(/src="\/(?!\/)/g, 'src="./');
-
-  fs.writeFileSync(indexPath, indexHtml, 'utf8');
-  console.log('Successfully fixed absolute paths in dist/index.html!');
-} else {
-  console.warn('Warning: dist/index.html not found! Skipping path fix.');
-}
+// 1.5 With custom app://localhost/ protocol, absolute paths in dist/index.html
+// resolve correctly — no path rewriting needed.
+console.log('Skipping path rewrite (custom protocol handles absolute paths).');
 
 // 2. Read package.json
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));

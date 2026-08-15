@@ -277,37 +277,23 @@ export default function LibraryScreen() {
 
   const handleRemoveCollectionMedia = async (uriToRemove: string) => {
     if (!selectedViewCollection) return;
-    showAlert(
-      'Remove Media',
-      'Are you sure you want to remove this media item from the collection?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            const updatedUris = (selectedViewCollection.mediaUris || []).filter(
-              (uri) => uri !== uriToRemove
-            );
-            let updatedStart = selectedViewCollection.startMediaUri;
-            let updatedEnd = selectedViewCollection.endMediaUri;
-            if (selectedViewCollection.startMediaUri === uriToRemove) updatedStart = undefined;
-            if (selectedViewCollection.endMediaUri === uriToRemove) updatedEnd = undefined;
-
-            const updated: MediaCollection = {
-              ...selectedViewCollection,
-              mediaUris: updatedUris,
-              startMediaUri: updatedStart,
-              endMediaUri: updatedEnd,
-            };
-
-            await updateCollection(updated);
-            setSelectedViewCollection(updated);
-            showAlert('Success', 'Media item removed from collection.');
-          },
-        },
-      ]
+    const updatedUris = (selectedViewCollection.mediaUris || []).filter(
+      (uri) => uri !== uriToRemove
     );
+    let updatedStart = selectedViewCollection.startMediaUri;
+    let updatedEnd = selectedViewCollection.endMediaUri;
+    if (selectedViewCollection.startMediaUri === uriToRemove) updatedStart = undefined;
+    if (selectedViewCollection.endMediaUri === uriToRemove) updatedEnd = undefined;
+
+    const updated: MediaCollection = {
+      ...selectedViewCollection,
+      mediaUris: updatedUris,
+      startMediaUri: updatedStart,
+      endMediaUri: updatedEnd,
+    };
+
+    await updateCollection(updated);
+    setSelectedViewCollection(updated);
   };
 
   const handlePickMedia = async () => {
