@@ -1,7 +1,7 @@
 {
   "name": "smartflow",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "electron/main.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -9,8 +9,8 @@
     "web": "expo start --web --port 8085",
     "build:web": "npx expo export -p web",
     "electron:start": "electron electron/main.js",
-    "electron:package": "npm run build:web && electron-builder build --dir",
-    "electron:build": "npm run build:web && electron-builder build --win --x64"
+    "electron:package": "node scripts/build-desktop.js --dir",
+    "electron:build": "node scripts/build-desktop.js --win --x64"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",

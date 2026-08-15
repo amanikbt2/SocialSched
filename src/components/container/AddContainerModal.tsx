@@ -17,6 +17,7 @@ import { AnimatedSheet } from '../common/AnimatedSheet';
 import { useThemeStore } from '../../stores/useThemeStore';
 import { useCampaignStore } from '../../stores/useCampaignStore';
 import { useSocialAccountsStore } from '../../stores/useSocialAccountsStore';
+import { useMediaCollectionStore } from '../../stores/useMediaCollectionStore';
 import { Container, Post, SkipTimeRange, SocialPlatform } from '../../db/types';
 import { FacebookMediaGrid } from '../common/FacebookMediaGrid';
 import { pickLocalMedia } from '../../utils/mediaPicker';
@@ -228,6 +229,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [mediaPerPost, setMediaPerPost] = useState<number>(
     existingContainer?.mediaPerPost || 1
   );
+  const { collections, loadCollections } = useMediaCollectionStore();
   const [loopTab, setLoopTab] = useState<'descriptions' | 'media'>('descriptions');
   const [loopDescriptions, setLoopDescriptions] = useState<string[]>(
     existingContainer?.loopDescriptions && existingContainer.loopDescriptions.length > 0
@@ -244,6 +246,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   const [newDescInput, setNewDescInput] = useState<string>('');
   const [pastedUrl, setPastedUrl] = useState<string>('');
   const [mediaPoolExpanded, setMediaPoolExpanded] = useState<boolean>(true);
+  const [isSmartSplitEnabled, setIsSmartSplitEnabled] = useState<boolean>(false);
 
   // Start & End media state
   const [startMediaUri, setStartMediaUri] = useState<string | null>(existingContainer?.startMediaUri || null);
@@ -253,8 +256,9 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 
   const handleAddDescription = () => {
     if (!newDescInput.trim()) return;
+    const splitChar = isSmartSplitEnabled ? '<==>' : '\n';
     const lines = newDescInput
-      .split('\n')
+      .split(splitChar)
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
     setLoopDescriptions([...loopDescriptions, ...lines]);
@@ -364,6 +368,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
   useEffect(() => {
     if (visible) {
       setIsSubmitting(false);
+      loadCollections();
       if (existingContainer) {
         setTitle(existingContainer.title || '');
         setSelectedPlatforms(existingContainer.platforms || []);
@@ -1403,18 +1408,39 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {loopTab === 'descriptions' && (
               <View style={styles.tabBodyBox}>
                 <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>
-                    Add Descriptions (Single or Multi-line at a go)
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+                      {isSmartSplitEnabled ? "Bulk Paste & Smart Split (<==>)" : "Add Descriptions"}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>Smart Split</Text>
+                      <Switch
+                        value={isSmartSplitEnabled}
+                        onValueChange={setIsSmartSplitEnabled}
+                        trackColor={{ false: colors.border, true: colors.primary }}
+                        thumbColor="#FFFFFF"
+                        style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                      />
+                    </View>
+                  </View>
                   <TextInput
                     style={[
                       styles.textAreaInput,
-                      { backgroundColor: colors.surfaceVariant, color: colors.textPrimary, borderColor: colors.border },
+                      { 
+                        backgroundColor: colors.surfaceVariant, 
+                        color: colors.textPrimary, 
+                        borderColor: colors.border,
+                        height: isSmartSplitEnabled ? 160 : 80 
+                      },
                     ]}
-                    placeholder="Type post caption or paste multiple lines at a go..."
+                    placeholder={
+                      isSmartSplitEnabled
+                        ? "Paste multiple paragraphs separated by '<==>' here...\n\nExample:\nFirst paragraph post...\n<==>\nSecond paragraph post...\n<==>\nThird paragraph post..."
+                        : "Type post caption or paste multiple lines (each line is a post)..."
+                    }
                     placeholderTextColor={colors.textMuted}
                     multiline
-                    numberOfLines={3}
+                    numberOfLines={isSmartSplitEnabled ? 8 : 3}
                     value={newDescInput}
                     onChangeText={setNewDescInput}
                   />
@@ -1424,7 +1450,11 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                     style={[styles.addDescBtn, { backgroundColor: colors.primary }]}
                   >
                     <Plus size={14} color="#FFFFFF" />
-                    <Text style={styles.addDescBtnText}>+ Add to Descriptions List</Text>
+                    <Text style={styles.addDescBtnText}>
+                      {isSmartSplitEnabled 
+                        ? `+ Parse & Add ${newDescInput.split('<==>').filter(x => x.trim()).length} Captions` 
+                        : '+ Add to Descriptions List'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
 

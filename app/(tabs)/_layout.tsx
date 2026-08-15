@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { useThemeStore } from '../../src/stores/useThemeStore';
-import { Home, FileText } from 'lucide-react-native';
+import { Home, FileText, Folder } from 'lucide-react-native';
 import { Platform } from 'react-native';
 
 export default function TabsLayout() {
@@ -66,11 +66,19 @@ export default function TabsLayout() {
         }}
       />
 
+      {/* 3. Media Tab */}
+      <Tabs.Screen
+        name="library"
+        options={{
+          title: 'Media',
+          tabBarIcon: ({ color }) => <Folder size={22} color={color} />,
+        }}
+      />
+
       {/* Hidden secondary routes (href: null hides them from bottom bar) */}
       <Tabs.Screen name="campaigns" options={{ href: null }} />
       <Tabs.Screen name="schedule" options={{ href: null }} />
       <Tabs.Screen name="queue" options={{ href: null }} />
-      <Tabs.Screen name="library" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
     </Tabs>
   );
