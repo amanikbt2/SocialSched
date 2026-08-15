@@ -956,6 +956,12 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
               value={firstComment}
               onChangeText={setFirstComment}
             />
+            <MentionPicker
+              text={firstComment}
+              onSelectMention={setFirstComment}
+              accessToken={activePage?.accessToken}
+              colors={colors}
+            />
 
             {/* Quick Smart Tags insertion chips */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 6, rowGap: 6, marginTop: 8 }}>
@@ -2051,6 +2057,12 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                       multiline
                       value={item.caption}
                       onChangeText={(text) => handleUpdatePostCaption(item.id, text)}
+                    />
+                    <MentionPicker
+                      text={item.caption}
+                      onSelectMention={(updated) => handleUpdatePostCaption(item.id, updated)}
+                      accessToken={activePage?.accessToken}
+                      colors={colors}
                     />
 
                     {/* Smart Dynamic Hashtags & Mentions Suggestion Bar */}

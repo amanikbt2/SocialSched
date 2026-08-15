@@ -7,11 +7,14 @@ import { PlatformBadge } from '../../src/components/common/PlatformBadge';
 import { ArrowLeft, Save, Copy, Trash2, Calendar, Clock, Tag, FileText, MessageSquare } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { format } from 'date-fns';
+import { MentionPicker } from '../../src/components/common/MentionPicker';
+import { useSocialAccountsStore } from '../../src/stores/useSocialAccountsStore';
 
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useThemeStore((state) => state.colors);
   const { posts, campaigns, updatePost, duplicatePost, deletePost } = useCampaignStore();
+  const activePage = useSocialAccountsStore((state) => state.activePage);
   const router = useRouter();
 
   const post = posts.find((p) => p.id === id);
@@ -109,6 +112,12 @@ export default function PostDetailScreen() {
           numberOfLines={5}
           style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
         />
+        <MentionPicker
+          text={caption}
+          onSelectMention={setCaption}
+          accessToken={activePage?.accessToken}
+          colors={colors}
+        />
 
         {/* First Comment */}
         <Text style={[styles.label, { color: colors.textSecondary }]}>First Comment</Text>
@@ -120,6 +129,12 @@ export default function PostDetailScreen() {
           multiline
           numberOfLines={3}
           style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
+        />
+        <MentionPicker
+          text={firstComment}
+          onSelectMention={setFirstComment}
+          accessToken={activePage?.accessToken}
+          colors={colors}
         />
 
         {/* Scheduled Time */}

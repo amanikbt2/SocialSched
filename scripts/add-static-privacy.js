@@ -142,7 +142,7 @@ createStaticPage('terms', 'Terms of Service', '📄', `
   </div>
 `);
 
-// 3. Data Deletion & Detection Instructions
+// 3. Data Deletion Instructions
 const dataDeletionBody = `
   <div class="section">
     <h2 class="section-title">1. Privacy-First Architecture</h2>
@@ -165,8 +165,34 @@ const dataDeletionBody = `
   </div>
 `;
 
-createStaticPage('data-deletion', 'User Data Deletion Instructions', '🗑️', dataDeletionBody);
-createStaticPage('data-detection', 'User Data Deletion Instructions', '🗑️', dataDeletionBody);
+// 4. Data Detection Policy
+const dataDetectionBody = `
+  <div class="section">
+    <h2 class="section-title">1. Real-Time Client-Side Detection</h2>
+    <p>SocialSched uses real-time local algorithms to identify parameters and manage formatting for your social posts. No content data is transmitted to middle-man monitoring servers.</p>
+  </div>
+  <div class="section">
+    <h2 class="section-title">2. Attributes Detected Locally</h2>
+    <div class="card">
+      <p class="bold">Connection Integrity (Token Status)</p>
+      <p>Asynchronously detects if your Facebook page access tokens are active or expired using direct Meta Graph API queries when opening the settings dashboard.</p>
+    </div>
+    <div class="card">
+      <p class="bold">Hashtag & Mention Scanning</p>
+      <p>Parses caption text inside the editor to identify tags and mentions to support category presets.</p>
+    </div>
+    <div class="card">
+      <p class="bold">Media Compatibility Scanning</p>
+      <p>Scans the size, dimensions, and type of uploaded photos and videos to verify compatibility before publishing.</p>
+    </div>
+  </div>
+  <div class="section">
+    <h2 class="section-title">3. Contact Us</h2>
+    <p>For questions regarding our local data detection processes, contact us at: <span class="bold">amanikbt1@gmail.com</span></p>
+  </div>
+`;
+
+createStaticPage('data-detection', 'Data Detection Policy & Instructions', '🔍', dataDetectionBody);
 
 // Create _redirects file for Render Static Sites
 const redirectsFile = path.join(__dirname, '../dist/_redirects');

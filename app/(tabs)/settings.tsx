@@ -7,7 +7,7 @@ import { useQueueStore } from '../../src/stores/useQueueStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { exportAppDataJSON, importAppDataJSON } from '../../src/services/backupService';
 import { getHiddenMediaStorageInfo, clearHiddenMediaStorage } from '../../src/utils/localMediaStorage';
-import { Moon, Sun, Monitor, HardDrive, Wifi, ShieldAlert, Download, Upload, Bell, Shield, FileText, Trash2, ChevronRight } from 'lucide-react-native';
+import { Moon, Sun, Monitor, HardDrive, Wifi, ShieldAlert, Download, Upload, Bell, Shield, FileText, Trash2, ChevronRight, Search } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 export default function SettingsScreen() {
@@ -328,7 +328,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => router.push('/data-deletion' as any)}
+              onPress={() => router.push('/data-detection' as any)}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -338,10 +338,10 @@ export default function SettingsScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Trash2 size={18} color="#EF4444" />
+                <Search size={18} color="#3B82F6" />
                 <View>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Data Deletion & Instructions</Text>
-                  <Text style={{ fontSize: 11, color: colors.textMuted }}>/data-deletion & /data-detection</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Data Detection Policy</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>/data-detection</Text>
                 </View>
               </View>
               <ChevronRight size={18} color={colors.textMuted} />
