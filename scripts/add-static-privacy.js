@@ -1,23 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 
-const distPrivacyDir = path.join(__dirname, '../dist/privacy');
-const distPrivacyFile = path.join(distPrivacyDir, 'index.html');
+function createStaticPage(folderName, title, icon, bodyHtml) {
+  const targetDir = path.join(__dirname, '../dist', folderName);
+  const targetFile = path.join(targetDir, 'index.html');
 
-console.log('Generating physical static Privacy Policy page at dist/privacy/index.html...');
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
 
-// Ensure the dist/privacy folder exists
-if (!fs.existsSync(distPrivacyDir)) {
-  fs.mkdirSync(distPrivacyDir, { recursive: true });
-}
-
-// Simple, clean HTML Privacy Policy matching the app style
-const htmlContent = `<!DOCTYPE html>
+  const fullHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy - SocialSched</title>
+  <title>${title} - SocialSched</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -73,6 +70,13 @@ const htmlContent = `<!DOCTYPE html>
     .bold {
       font-weight: 700;
     }
+    .card {
+      background-color: #F8FAFC;
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid #E2E8F0;
+      margin-top: 12px;
+    }
     .footer {
       margin-top: 40px;
       padding-top: 16px;
@@ -86,51 +90,85 @@ const htmlContent = `<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="header">
-      <div style="font-size: 40px;">🛡️</div>
-      <h1 class="title">Privacy Policy</h1>
+      <div style="font-size: 40px;">${icon}</div>
+      <h1 class="title">${title}</h1>
       <div class="subtitle">Last updated: August 15, 2026</div>
     </div>
-
-    <div class="section">
-      <h2 class="section-title">1. Introduction</h2>
-      <p>Welcome to SocialSched ("we," "our," or "us"). We respect your privacy and are committed to protecting your personal data. This privacy policy explains how our application processes, stores, and handles your information when you connect your Facebook and Instagram accounts.</p>
-    </div>
-
-    <div class="section">
-      <h2 class="section-title">2. Information We Collect & How We Use It</h2>
-      <p>Our application operates as a client-side scheduling utility. We do not run middle-man database servers to collect or store your personal social media credentials.</p>
-      <ul>
-        <li><span class="bold">Access Tokens:</span> When you authenticate via Facebook Login, the app receives standard access tokens. These tokens are saved locally on your device using secure local storage (AsyncStorage) and are sent directly to Facebook's Graph API endpoints to schedule or publish your posts.</li>
-        <li><span class="bold">Media Files:</span> Media library photos or videos you upload to schedule posts are stored locally on your device's hidden app directory and are never uploaded to any third-party storage other than Meta's servers when publishing.</li>
-      </ul>
-    </div>
-
-    <div class="section">
-      <h2 class="section-title">3. Data Deletion & Revocation</h2>
-      <p>Because all your data is stored locally on your own device, you have complete control over its deletion:</p>
-      <ul>
-        <li>You can clear all cached accounts, tokens, and media from within the app settings by clicking "Clear App Storage".</li>
-        <li>You can revoke the app's permissions at any time through your Facebook Account settings under "Settings & Privacy" - "Settings" - "Business Integrations".</li>
-      </ul>
-    </div>
-
-    <div class="section">
-      <h2 class="section-title">4. Contact Us</h2>
-      <p>If you have any questions or feedback regarding this privacy policy, please contact us at <span class="bold">amanikbt1@gmail.com</span>.</p>
-    </div>
-
+    ${bodyHtml}
     <div class="footer">
       SocialSched App &copy; 2026. All rights reserved.
     </div>
   </div>
 </body>
-</html>
+</html>`;
+
+  fs.writeFileSync(targetFile, fullHtml, 'utf8');
+  console.log(`✅ Successfully wrote dist/${folderName}/index.html`);
+}
+
+// 1. Privacy Policy
+createStaticPage('privacy', 'Privacy Policy', '🛡️', `
+  <div class="section">
+    <h2 class="section-title">1. Introduction</h2>
+    <p>Welcome to SocialSched ("we," "our," or "us"). We respect your privacy and are committed to protecting your personal data. This privacy policy explains how our application processes, stores, and handles your information when you connect your Facebook and Instagram accounts.</p>
+  </div>
+  <div class="section">
+    <h2 class="section-title">2. Information We Collect & How We Use It</h2>
+    <p>Our application operates as a client-side scheduling utility. We do not run middle-man database servers to collect or store your personal social media credentials.</p>
+    <ul>
+      <li><span class="bold">Access Tokens:</span> Saved locally on your device using secure storage and sent directly to Meta Graph APIs.</li>
+      <li><span class="bold">Media Files:</span> Stored locally on your device's hidden app directory.</li>
+    </ul>
+  </div>
+  <div class="section">
+    <h2 class="section-title">3. Contact Us</h2>
+    <p>Email: <span class="bold">amanikbt1@gmail.com</span></p>
+  </div>
+`);
+
+// 2. Terms of Service
+createStaticPage('terms', 'Terms of Service', '📄', `
+  <div class="section">
+    <h2 class="section-title">1. Agreement to Terms</h2>
+    <p>By accessing or using SocialSched, you agree to be bound by these Terms of Service.</p>
+  </div>
+  <div class="section">
+    <h2 class="section-title">2. Platform Usage</h2>
+    <p>SocialSched enables scheduling directly to Facebook and Instagram. Users agree to abide by all platform community guidelines.</p>
+  </div>
+  <div class="section">
+    <h2 class="section-title">3. Contact Us</h2>
+    <p>Email: <span class="bold">amanikbt1@gmail.com</span></p>
+  </div>
+`);
+
+// 3. Data Deletion & Detection Instructions
+const dataDeletionBody = `
+  <div class="section">
+    <h2 class="section-title">1. Privacy-First Architecture</h2>
+    <p>SocialSched operates client-side. We do not store your credentials on any external server.</p>
+  </div>
+  <div class="section">
+    <h2 class="section-title">2. How to Delete Your Data</h2>
+    <div class="card">
+      <p class="bold">Option A: Clear App Storage</p>
+      <p>Go to Settings in SocialSched app → Click "Wipe & Clear Storage".</p>
+    </div>
+    <div class="card">
+      <p class="bold">Option B: Revoke Facebook App Access</p>
+      <p>Go to Facebook Settings → Business Integrations → Remove SocialSched.</p>
+    </div>
+  </div>
+  <div class="section">
+    <h2 class="section-title">3. Support Contact</h2>
+    <p>Email: <span class="bold">amanikbt1@gmail.com</span></p>
+  </div>
 `;
 
-fs.writeFileSync(distPrivacyFile, htmlContent, 'utf8');
-console.log('✅ Successfully wrote dist/privacy/index.html');
+createStaticPage('data-deletion', 'User Data Deletion Instructions', '🗑️', dataDeletionBody);
+createStaticPage('data-detection', 'User Data Deletion Instructions', '🗑️', dataDeletionBody);
 
-// Create _redirects file for Render Static Sites to support Expo routing fallback
+// Create _redirects file for Render Static Sites
 const redirectsFile = path.join(__dirname, '../dist/_redirects');
 fs.writeFileSync(redirectsFile, '/* /index.html 200\n', 'utf8');
 console.log('✅ Successfully wrote dist/_redirects for Render fallback routing');

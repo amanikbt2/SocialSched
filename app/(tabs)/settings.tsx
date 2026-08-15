@@ -7,13 +7,15 @@ import { useQueueStore } from '../../src/stores/useQueueStore';
 import { useCampaignStore } from '../../src/stores/useCampaignStore';
 import { exportAppDataJSON, importAppDataJSON } from '../../src/services/backupService';
 import { getHiddenMediaStorageInfo, clearHiddenMediaStorage } from '../../src/utils/localMediaStorage';
-import { Moon, Sun, Monitor, HardDrive, Wifi, ShieldAlert, Download, Upload, Bell } from 'lucide-react-native';
+import { Moon, Sun, Monitor, HardDrive, Wifi, ShieldAlert, Download, Upload, Bell, Shield, FileText, Trash2, ChevronRight } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 export default function SettingsScreen() {
   const colors = useThemeStore((state) => state.colors);
   const { mode, setMode } = useThemeStore();
   const { networkStatus, setNetworkStatus, autoRetry, setAutoRetry } = useQueueStore();
   const { posts, campaigns, loadData } = useCampaignStore();
+  const router = useRouter();
 
   const [notifications, setNotifications] = useState(true);
   const [mediaStorage, setMediaStorage] = useState<{ sizeBytes: number; fileCount: number }>({ sizeBytes: 0, fileCount: 0 });
@@ -269,6 +271,81 @@ export default function SettingsScreen() {
               onValueChange={setNotifications}
               trackColor={{ false: colors.surfaceVariant, true: colors.accent }}
             />
+          </View>
+        </Card>
+
+        {/* Legal & Platform Compliance Section */}
+        <Card style={styles.sectionCard}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Legal & Compliance</Text>
+          <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>Terms of Service, Privacy Policy & Meta Data Rights</Text>
+
+          <View style={{ marginTop: 8, gap: 4 }}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/terms' as any)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 12,
+                paddingHorizontal: 8,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <FileText size={18} color={colors.primary} />
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Terms of Service</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>/terms</Text>
+                </View>
+              </View>
+              <ChevronRight size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/privacy' as any)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 12,
+                paddingHorizontal: 8,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Shield size={18} color="#10B981" />
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Privacy Policy</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>/privacy</Text>
+                </View>
+              </View>
+              <ChevronRight size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/data-deletion' as any)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 12,
+                paddingHorizontal: 8,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Trash2 size={18} color="#EF4444" />
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Data Deletion & Instructions</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>/data-deletion & /data-detection</Text>
+                </View>
+              </View>
+              <ChevronRight size={18} color={colors.textMuted} />
+            </TouchableOpacity>
           </View>
         </Card>
 
