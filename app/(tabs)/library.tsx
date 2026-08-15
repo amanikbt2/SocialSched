@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Modal, Alert, Platform } from 'react-native';
 import { Header } from '../../src/components/common/Header';
 import { Card } from '../../src/components/common/Card';
@@ -59,7 +59,42 @@ export default function LibraryScreen() {
   const { collections, loadCollections, createCollection, deleteCollection, updateCollection } = useMediaCollectionStore();
 
   const [activeSection, setActiveSection] = useState<'items' | 'collections'>('items');
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>('all');
   const [createModalVisible, setCreateModalVisible] = useState(false);
+
+  // Computed collection media for Library Items tab
+  const mediaCollections = useMemo(() =>
+    collections.filter(col => col.type === 'media'),
+    [collections]
+  );
+
+  const allCollectionMedia = useMemo(() => {
+    const mediaItems: { uri: string; collectionName: string; collectionId: string; isVideo: boolean }[] = [];
+    for (const col of mediaCollections) {
+      if (col.mediaUris && col.mediaUris.length > 0) {
+        for (const uri of col.mediaUris) {
+          const isVideo = /\.(mp4|mov|mkv|webm|avi)$/i.test(uri);
+          mediaItems.push({ uri, collectionName: col.name, collectionId: col.id, isVideo });
+        }
+      }
+    }
+    return mediaItems;
+  }, [mediaCollections]);
+
+  const displayedCollectionMedia = useMemo(() => {
+    let filtered = selectedCollectionId === 'all'
+      ? allCollectionMedia
+      : allCollectionMedia.filter(m => m.collectionId === selectedCollectionId);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(m =>
+        m.collectionName.toLowerCase().includes(q) || m.uri.toLowerCase().includes(q)
+      );
+    }
+
+    return filtered;
+  }, [selectedCollectionId, allCollectionMedia, searchQuery]);
 
   // View Collection Modal state
   const [viewCollectionModalVisible, setViewCollectionModalVisible] = useState(false);
@@ -399,94 +434,101 @@ export default function LibraryScreen() {
             </View>
           </View>
 
-          {/* Folders horizontal bar */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderRow}>
-            {folders.map((folder) => (
-              <TouchableOpacity
-                key={folder}
-                activeOpacity={0.8}
-                onPress={() => setSelectedFolder(folder === 'All' ? 'all' : folder)}
-                style={[
-                  styles.folderChip,
-                  {
-                    backgroundColor:
-                      (selectedFolder === 'all' && folder === 'All') || selectedFolder === folder
-                        ? colors.primaryContainer
-                        : colors.surface,
-                    borderColor:
-                      (selectedFolder === 'all' && folder === 'All') || selectedFolder === folder
-                        ? colors.primary
-                        : colors.border,
-                  },
-                ]}
-              >
-                <Folder
-                  size={14}
-                  color={
-                    (selectedFolder === 'all' && folder === 'All') || selectedFolder === folder
-                      ? colors.primary
-                      : colors.textSecondary
-                  }
-                />
-                <Text
+          {/* Collection Filter Cards */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.collectionFilterRow}>
+            {/* "All" Card */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setSelectedCollectionId('all')}
+              style={[
+                styles.collectionFilterCard,
+                {
+                  backgroundColor: selectedCollectionId === 'all' ? colors.primaryContainer : colors.surface,
+                  borderColor: selectedCollectionId === 'all' ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <View style={[styles.collectionFilterThumb, { backgroundColor: selectedCollectionId === 'all' ? `${colors.primary}18` : colors.background }]}>
+                <Layers size={24} color={selectedCollectionId === 'all' ? colors.primary : colors.textMuted} />
+              </View>
+              <Text style={[styles.collectionFilterName, { color: selectedCollectionId === 'all' ? colors.primary : colors.textPrimary }]} numberOfLines={1}>
+                All
+              </Text>
+              <Text style={[styles.collectionFilterCount, { color: selectedCollectionId === 'all' ? colors.primary : colors.textMuted }]}>
+                {allCollectionMedia.length} items
+              </Text>
+            </TouchableOpacity>
+
+            {/* Each Media Collection */}
+            {mediaCollections.map((col) => {
+              const isSelected = selectedCollectionId === col.id;
+              const firstUri = col.mediaUris && col.mediaUris.length > 0 ? col.mediaUris[0] : null;
+              return (
+                <TouchableOpacity
+                  key={col.id}
+                  activeOpacity={0.85}
+                  onPress={() => setSelectedCollectionId(col.id)}
                   style={[
-                    styles.folderText,
+                    styles.collectionFilterCard,
                     {
-                      color:
-                        (selectedFolder === 'all' && folder === 'All') || selectedFolder === folder
-                          ? colors.primary
-                          : colors.textSecondary,
+                      backgroundColor: isSelected ? colors.primaryContainer : colors.surface,
+                      borderColor: isSelected ? colors.primary : colors.border,
                     },
                   ]}
                 >
-                  {folder}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  {firstUri ? (
+                    <Image source={{ uri: firstUri }} style={styles.collectionFilterThumb} />
+                  ) : (
+                    <View style={[styles.collectionFilterThumb, { backgroundColor: colors.background }]}>
+                      <Folder size={22} color={colors.textMuted} />
+                    </View>
+                  )}
+                  <Text style={[styles.collectionFilterName, { color: isSelected ? colors.primary : colors.textPrimary }]} numberOfLines={1}>
+                    {col.name}
+                  </Text>
+                  <Text style={[styles.collectionFilterCount, { color: isSelected ? colors.primary : colors.textMuted }]}>
+                    {col.mediaUris?.length || 0} items
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
-          {/* Media Grid */}
+          {/* Media Grid — from Collections */}
           <View style={styles.gridContainer}>
-            {filteredMedia.length === 0 ? (
+            {displayedCollectionMedia.length === 0 ? (
               <Card style={styles.emptyCard}>
                 <Folder size={32} color={colors.textMuted} />
                 <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No media items found</Text>
                 <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                  Import photos or videos from your device to reuse across posts.
+                  {mediaCollections.length === 0
+                    ? 'Create a media collection in the Collections tab to see media here.'
+                    : 'No media in this collection matches your search.'}
                 </Text>
               </Card>
             ) : (
               <View style={styles.grid}>
-                {filteredMedia.map((item) => (
-                  <View
-                    key={item.id}
+                {displayedCollectionMedia.map((item, index) => (
+                  <TouchableOpacity
+                    key={`${item.collectionId}-${index}`}
+                    activeOpacity={0.9}
+                    onPress={() => setFullscreenPreviewUri(item.uri)}
                     style={[styles.mediaCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
                   >
-                    <Image source={{ uri: item.uri }} style={styles.mediaImage} />
+                    <Image source={{ uri: item.uri }} style={styles.mediaImage} resizeMode="cover" />
 
-                    {item.type === 'video' && (
+                    {item.isVideo && (
                       <View style={styles.videoBadge}>
                         <Film size={12} color="#FFFFFF" />
                       </View>
                     )}
 
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => toggleFavorite(item.id)}
-                      style={styles.favBtn}
-                    >
-                      <Star size={14} color={item.isFavorite ? '#F59E0B' : '#FFFFFF'} fill={item.isFavorite ? '#F59E0B' : 'transparent'} />
-                    </TouchableOpacity>
-
-                    <View style={styles.mediaFooter}>
-                      <Text style={[styles.mediaName, { color: colors.textPrimary }]} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      <TouchableOpacity activeOpacity={0.8} onPress={() => deleteMediaItem(item.id)}>
-                        <Trash2 size={14} color={colors.danger} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                    {selectedCollectionId === 'all' && (
+                      <View style={styles.collectionBadge}>
+                        <Text style={styles.collectionBadgeText} numberOfLines={1}>{item.collectionName}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 ))}
               </View>
             )}
@@ -1134,22 +1176,50 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  folderRow: {
+  collectionFilterRow: {
     paddingHorizontal: 20,
-    paddingBottom: 12,
-    gap: 8,
+    paddingBottom: 16,
+    paddingTop: 4,
+    gap: 12,
   },
-  folderChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  collectionFilterCard: {
+    width: 94,
     borderRadius: 14,
-    borderWidth: 1,
-    gap: 6,
+    borderWidth: 1.5,
+    padding: 8,
+    alignItems: 'center',
+    gap: 4,
   },
-  folderText: {
-    fontSize: 12,
+  collectionFilterThumb: {
+    width: 76,
+    height: 76,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  collectionFilterName: {
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  collectionFilterCount: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  collectionBadge: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  collectionBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
     fontWeight: '700',
   },
   gridContainer: {

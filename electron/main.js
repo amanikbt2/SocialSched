@@ -1,7 +1,22 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const url = require('url');
+
+// Register custom 'app' protocol scheme as privileged (required for relative asset paths, Fetch API, and standard CSP behavior)
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+      corsEnabled: true
+    }
+  }
+]);
 
 const MEDIA_DIR = path.join(os.homedir(), '.smartflow_media');
 
@@ -26,21 +41,38 @@ function createWindow() {
 
   const isDev = process.env.NODE_ENV === 'development';
 
+  // Always open DevTools for debugging (remove once stable)
+  win.webContents.openDevTools({ mode: 'detach' });
+
+  // Log renderer console messages to main process stdout
+  win.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const levels = ['verbose', 'info', 'warning', 'error'];
+    console.log(`[Renderer ${levels[level] || level}] ${message} (${sourceId}:${line})`);
+  });
+
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[Electron] Page failed to load: ${errorDescription} (code ${errorCode}) at ${validatedURL}`);
+  });
+
+  win.webContents.on('did-finish-load', () => {
+    console.log('[Electron] Page loaded successfully.');
+  });
+
   if (isDev) {
     win.loadURL('http://localhost:8085').catch(err => {
       console.error('Failed to load local Expo dev server on port 8085:', err);
     });
   } else {
-    // Use loadURL with file:// and a hash so Expo Router can resolve routes
-    const distIndex = path.join(__dirname, '../dist/index.html');
-    const fileUrl = `file:///${distIndex.replace(/\\/g, '/')}`;
-    win.loadURL(fileUrl).catch(err => {
-      console.error('Failed to load dist/index.html. Did you build the web bundle first?', err);
+    // Load window via custom privileged protocol
+    console.log('[Electron] Loading app://index.html');
+    win.loadURL('app://index.html').catch(err => {
+      console.error('Failed to load app://index.html. Did you build the web bundle first?', err);
     });
   }
 
   win.setMenuBarVisibility(false);
 }
+
 
 // IPC Handlers for Local Storage in Windows .exe
 ipcMain.handle('save-media-file', async (event, sourcePath) => {

@@ -1410,97 +1410,83 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
             {/* Tab 1: DESCRIPTIONS */}
             {loopTab === 'descriptions' && (
               <View style={styles.tabBodyBox}>
-                {/* Pre-fill from Text Collection */}
+                {/* Text Collection Dropdown Selector */}
                 <View style={{ marginBottom: 12 }}>
                   <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
                     LOAD FROM TEXT COLLECTION
                   </Text>
-                  
-                  {selectedTextCollectionId ? (() => {
-                    const selectedCol = collections.find(c => c.id === selectedTextCollectionId);
-                    if (!selectedCol) return null;
-                    return (
-                      <View style={{ backgroundColor: colors.primaryContainer + '15', borderColor: colors.primary + '40', borderWidth: 1, borderRadius: 12, padding: 14 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <CheckCircle2 size={16} color={colors.primary} />
-                            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
-                              {selectedCol.name}
-                            </Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setSelectedTextCollectionId(null);
-                              setLoopDescriptions([]);
-                            }}
-                            style={{ backgroundColor: colors.surfaceVariant, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 }}
-                          >
-                            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSecondary }}>Clear / Select None</Text>
-                          </TouchableOpacity>
-                        </View>
-                        <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
-                          📝 {selectedCol.descriptions?.length || 0} description items loaded. Manual text configuration is hidden to save space.
-                        </Text>
-                      </View>
-                    );
-                  })() : collections.filter(c => c.type === 'text').length === 0 ? (
-                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16 }}>
-                      No text collections created yet. Go to the "Media" tab to group your captions/descriptions into reusable collections.
+
+                  {collections.filter(c => c.type === 'text').length === 0 ? (
+                    <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 16, marginBottom: 8 }}>
+                      No text collections created yet. Go to the "Media" tab to create reusable text collections.
                     </Text>
                   ) : (
-                    <View>
-                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>
-                        Quickly populate descriptions using a pre-saved text collection:
-                      </Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                        {collections.filter(c => c.type === 'text').map((col) => (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4, paddingBottom: 8 }}>
+                      {/* "None" option — default */}
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          setSelectedTextCollectionId(null);
+                          setLoopDescriptions([]);
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 14,
+                          paddingVertical: 8,
+                          borderRadius: 14,
+                          backgroundColor: !selectedTextCollectionId ? colors.primary : colors.surface,
+                          borderColor: !selectedTextCollectionId ? colors.primary : colors.border,
+                          borderWidth: 1,
+                          gap: 6
+                        }}
+                      >
+                        <X size={13} color={!selectedTextCollectionId ? '#FFFFFF' : colors.textSecondary} />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: !selectedTextCollectionId ? '#FFFFFF' : colors.textSecondary }}>
+                          None
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Text collection chips */}
+                      {collections.filter(c => c.type === 'text').map((col) => {
+                        const isSelected = selectedTextCollectionId === col.id;
+                        return (
                           <TouchableOpacity
                             key={col.id}
                             activeOpacity={0.8}
                             onPress={() => {
-                              Alert.alert(
-                                'Load Text Collection',
-                                `Would you like to load "${col.name}" with ${col.descriptions?.length || 0} items?`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  {
-                                    text: 'Load',
-                                    onPress: () => {
-                                      setLoopDescriptions(col.descriptions || []);
-                                      setSelectedTextCollectionId(col.id);
-                                    }
-                                  }
-                                ]
-                              );
+                              setLoopDescriptions(col.descriptions || []);
+                              setSelectedTextCollectionId(col.id);
                             }}
                             style={{
                               flexDirection: 'row',
                               alignItems: 'center',
-                              paddingHorizontal: 12,
+                              paddingHorizontal: 14,
                               paddingVertical: 8,
                               borderRadius: 14,
-                              backgroundColor: colors.primaryContainer,
-                              borderColor: colors.primary,
+                              backgroundColor: isSelected ? colors.primary : colors.primaryContainer,
+                              borderColor: isSelected ? colors.primary : colors.primary + '60',
                               borderWidth: 1,
                               gap: 6
                             }}
                           >
-                            <FileText size={13} color={colors.primary} />
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
+                            <FileText size={13} color={isSelected ? '#FFFFFF' : colors.primary} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#FFFFFF' : colors.primary }}>
                               {col.name} ({col.descriptions?.length || 0})
                             </Text>
                           </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
+                        );
+                      })}
+                    </ScrollView>
                   )}
                 </View>
 
+                {/* When NO collection selected → show manual input */}
                 {!selectedTextCollectionId && (
                   <View style={styles.inputGroup}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
-                        {isSmartSplitEnabled ? "Bulk Paste & Smart Split (<==>)" : "Add Descriptions"}
+                        {isSmartSplitEnabled ? "Bulk Paste & Smart Split (<==>) " : "Add Descriptions"}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6 }}>
                         <Text style={{ fontSize: 11, color: colors.textSecondary }}>Smart Split</Text>
@@ -1525,7 +1511,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                       ]}
                       placeholder={
                         isSmartSplitEnabled
-                          ? "Paste multiple paragraphs separated by '<==>' here...\n\nExample:\nFirst paragraph post...\n<==>\nSecond paragraph post...\n<==>\nThird paragraph post..."
+                          ? "Paste multiple paragraphs separated by '<=>' here...\n\nExample:\nFirst paragraph post...\n<==>\nSecond paragraph post...\n<==>\nThird paragraph post..."
                           : "Type post caption or paste multiple lines (each line is a post)..."
                       }
                       placeholderTextColor={colors.textMuted}
@@ -1542,21 +1528,23 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
                       <Plus size={14} color="#FFFFFF" />
                       <Text style={styles.addDescBtnText}>
                         {isSmartSplitEnabled 
-                          ? `+ Parse & Add ${newDescInput.split('<==>').filter(x => x.trim()).length} Captions` 
+                          ? `+ Parse & Add ${newDescInput.split('<=>').filter(x => x.trim()).length} Captions` 
                           : '+ Add to Descriptions List'}
                       </Text>
                     </TouchableOpacity>
                   </View>
                 )}
 
-                {/* Saved Descriptions */}
+                {/* Descriptions List — always shown */}
                 <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 16 }]}>
-                  SAVED DESCRIPTIONS LIST ({loopDescriptions.length})
+                  {selectedTextCollectionId ? 'LOADED DESCRIPTIONS' : 'SAVED DESCRIPTIONS LIST'} ({loopDescriptions.length})
                 </Text>
 
                 {loopDescriptions.length === 0 ? (
                   <Text style={[styles.emptyHintText, { color: colors.textMuted }]}>
-                    No descriptions added yet. Add at least 1 description for your loop posts.
+                    {selectedTextCollectionId 
+                      ? 'This text collection appears to be empty.'
+                      : 'No descriptions added yet. Add at least 1 description for your loop posts.'}
                   </Text>
                 ) : (
                   loopDescriptions.map((desc, idx) => (
