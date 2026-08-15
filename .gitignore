@@ -34,3 +34,8 @@ yarn-error.*
 
 # TypeScript
 *.tsbuildinfo
+
+# Desktop Build Outputs
+dist-desktop/
+out/
+build/
