@@ -129,3 +129,8 @@ const htmlContent = `<!DOCTYPE html>
 
 fs.writeFileSync(distPrivacyFile, htmlContent, 'utf8');
 console.log('✅ Successfully wrote dist/privacy/index.html');
+
+// Create _redirects file for Render Static Sites to support Expo routing fallback
+const redirectsFile = path.join(__dirname, '../dist/_redirects');
+fs.writeFileSync(redirectsFile, '/* /index.html 200\n', 'utf8');
+console.log('✅ Successfully wrote dist/_redirects for Render fallback routing');
