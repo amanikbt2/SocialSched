@@ -37,7 +37,7 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdge": "enabled",
-      "package": "com.sliver1.smartflow",
+      "package": "com.amanikbt1.smartflow",
       "versionCode": 1
     },
     "web": {
