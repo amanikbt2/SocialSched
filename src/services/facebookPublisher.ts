@@ -133,14 +133,20 @@ export async function fetchMetaScheduledPosts(
 
   try {
     const res = await fetch(url).catch(() => null);
-    if (res && res.ok) {
-      const data = await res.json().catch(() => null);
-      if (data && Array.isArray(data.data)) {
-        return data.data;
+    if (res) {
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && Array.isArray(data.data)) {
+          return data.data;
+        }
+      } else {
+        const errData = await res.json().catch(() => null);
+        console.warn(`[Facebook API Error] fetchMetaScheduledPosts failed for ID ${targetId}:`, errData);
       }
     }
     return [];
-  } catch {
+  } catch (err) {
+    console.error('[Facebook API Exception] fetchMetaScheduledPosts exception:', err);
     return [];
   }
 }
@@ -168,14 +174,20 @@ export async function fetchMetaPublishedPosts(
 
   try {
     const res = await fetch(url).catch(() => null);
-    if (res && res.ok) {
-      const data = await res.json().catch(() => null);
-      if (data && Array.isArray(data.data)) {
-        return data.data;
+    if (res) {
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && Array.isArray(data.data)) {
+          return data.data;
+        }
+      } else {
+        const errData = await res.json().catch(() => null);
+        console.warn(`[Facebook API Error] fetchMetaPublishedPosts failed for ID ${targetId}:`, errData);
       }
     }
     return [];
-  } catch {
+  } catch (err) {
+    console.error('[Facebook API Exception] fetchMetaPublishedPosts exception:', err);
     return [];
   }
 }

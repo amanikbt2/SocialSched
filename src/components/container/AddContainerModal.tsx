@@ -79,11 +79,19 @@ interface AddContainerModalProps {
 
 const SAMPLE_HASHTAGS = ['#viral', '#trending', '#marketing', '#tech', '#growth', '#photooftheday', '#sale'];
 const SAMPLE_MENTIONS = ['@facebook', '@instagram', '@meta', '@techcrunch', '@forbes', '@creator'];
-const SAMPLE_IMAGES = [
-  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
-  'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=60',
-  'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=60',
+const DEFAULT_THUMBNAILS = [
+  '/assets/icon.png',
+  '/assets/thumb_calendar.jpg',
+  '/assets/thumb_grid.jpg',
+  '/assets/thumb_connect.jpg',
 ];
+
+const getRandomDefaultThumbnail = () => {
+  const idx = Math.floor(Math.random() * DEFAULT_THUMBNAILS.length);
+  return DEFAULT_THUMBNAILS[idx];
+};
+
+const SAMPLE_IMAGES = DEFAULT_THUMBNAILS;
 
 interface DraftPostItem {
   id: string;
@@ -550,7 +558,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
           description: `Loop Container (${persistentMediaPool.length} media pool, ${loopDescriptions.length} captions)`,
           category: 'Loop Container',
           color: '#8B5CF6',
-          thumbnailUri: persistentMediaPool[0] || undefined,
+          thumbnailUri: persistentMediaPool[0] || getRandomDefaultThumbnail(),
           platforms: selectedPlatforms,
           smartSchedulingEnabled: true, // Always ON for loop containers
           intervalMinutes: intervalMinutes || 60,
@@ -617,7 +625,7 @@ export const AddContainerModal: React.FC<AddContainerModalProps> = ({
 
       // STANDARD CONTAINER SAVE FLOW
       const thumbnail =
-        posts.find((p) => p.images.length > 0)?.images[0] || SAMPLE_IMAGES[0];
+        posts.find((p) => p.images.length > 0)?.images[0] || getRandomDefaultThumbnail();
 
       const containerData: Container = {
         id: containerId,

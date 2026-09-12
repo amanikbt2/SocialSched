@@ -40,7 +40,7 @@ export const ContainerCard: React.FC<ContainerCardProps> = ({
 
   const defaultThumbnail =
     container.thumbnailUri ||
-    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60';
+    '/assets/icon.png';
 
   const progressPercent = totalCount > 0 ? (publishedCount / totalCount) * 100 : 0;
   const statusInfo = getContainerStatusInfo(container, posts, networkStatus, activePostId);

@@ -403,7 +403,7 @@ export default function ContainerDetailScreen() {
 
   const defaultThumbnail =
     container.thumbnailUri ||
-    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60';
+    '/assets/icon.png';
 
   const getFirst5Words = (text: string) => {
     if (!text || text.trim() === '') return 'Empty post caption...';

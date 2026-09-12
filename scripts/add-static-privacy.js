@@ -215,3 +215,29 @@ fs.writeFileSync(redirectsFile, "/* /index.html 200\n", "utf8");
 console.log(
   "✅ Successfully wrote dist/_redirects for Render fallback routing",
 );
+
+// 5. Copy assets folder to dist/assets to serve thumbnails statically
+const srcAssets = path.join(__dirname, '../assets');
+const destAssets = path.join(__dirname, '../dist/assets');
+
+function copyDirRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+try {
+  console.log('Copying assets folder to dist/assets...');
+  copyDirRecursive(srcAssets, destAssets);
+  console.log('✅ Assets folder successfully copied to dist/assets!');
+} catch (err) {
+  console.error('Warning: Failed to copy assets folder:', err);
+}

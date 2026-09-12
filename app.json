@@ -37,7 +37,8 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdge": "enabled",
-      "package": "com.sliver1.smartflow"
+      "package": "com.sliver1.smartflow",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
